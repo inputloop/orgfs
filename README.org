@@ -1,0 +1,220 @@
+#+TITLE: orgfs
+#+SUBTITLE: fabricated spoke - literate distributed file systems per symmetric declaration
+#+AUTHOR: Corwin Brust
+#+LANGUAGE: en
+#+OPTIONS: toc:2 num:nil
+
+Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors.
+Code: GPL-3.0-or-later (see =COPYING=). Prose, including this file: CC-BY-SA-4.0.
+
+* What orgfs is
+
+orgfs spreads a file over the machines of a group. It cuts the file into a
+fixed number of byte slices (/stripes/), writes each slice to more than one
+machine, and puts the file back together on request, checking a SHA-256 for every
+slice and for the whole. The group, the stripe count and the number of copies come
+from one Org file, the /declaration/, which every machine holds identically. No
+machine is in charge: each one reads the same file and works out the same plan.
+
+It is written in POSIX =sh= and =awk=, because a target host may have no Python, no
+Node and no package manager. Tests are written in Python 3 (standard library only),
+a different language from the tool, on purpose.
+
+* Why
+
+Two words are this project's own: SPOKE and OBFISCATE (spelled as the project
+spells it). orgfs is a small demonstration of both, beside the plain sshfs mounts
+that already exist.
+
+- A *spoke* is storage one host lends to others. On gw12, =/spokes/gw14/storage=,
+  =/spokes/gw14/data= and =/spokes/gw16/storage= are sshfs mounts of other hosts'
+  storage. That is a spoke the plain way: the whole tree, one host at a time.
+- orgfs is a spoke the other way: a registry spread "in hunks as slices across the
+  bytes", so that no one member holds all of it and any member can say what the
+  group agreed to.
+
+The demonstration payload is the *licensing stack*: a small register of the free
+software this very project uses, with each licence stated and sourced, so a reader
+sees whose work is in use and on what terms. orgfs stores that register as its own
+first test and renders it as a site.
+
+* The declaration
+
+A declaration is an Org file. Only headings of two kinds and their property drawers
+count; everything else is prose, which the tool ignores and which cannot change
+the spoke's identity.
+
+#+BEGIN_SRC org
+,* spoke licensing
+:PROPERTIES:
+:RING: GREAT
+:STRIPES: 5
+:REPLICAS: 2
+:VISIBILITY: public
+:END:
+
+,** member gw12
+:PROPERTIES:
+:ROOT: /spokes/gw12/storage
+:TRANSPORT: local
+:END:
+#+END_SRC
+
+(The full example is =examples/licensing.org=. Its paths are illustrative.)
+
+| Property     | On     | Meaning                                                                 |
+|--------------+--------+-------------------------------------------------------------------------|
+| =RING=       | spoke  | GRAIN, GREAT or GRAND. A label for now; it changes no behaviour.        |
+| =STRIPES=    | spoke  | Integer 1..256: how many byte slices a file is cut into.                |
+| =REPLICAS=   | spoke  | Integer 1..members: how many members hold each slice.                   |
+| =VISIBILITY= | spoke  | public, private or sealed (see below).                                  |
+| =ROOT=       | member | Absolute path, no whitespace, the same on every host that uses it.      |
+| =TRANSPORT=  | member | =local= or =sshfs=. For sshfs, =check= requires ROOT to be a mount point. |
+
+Rules the tool enforces:
+
+- Exactly one =* spoke NAME= heading (name: =[a-z0-9][a-z0-9_-]*=), and one
+  =** member HOST= heading per member. Other headings are prose.
+- Every property above is required; unknown or duplicate properties are errors.
+- *Identity.* The spoke's identity is the SHA-256 of ="orgfs-decl-1\n"= followed by
+  the normalized property lines, sorted bytewise. Normalizing lower-cases or
+  upper-cases the keyword values, strips trailing slashes from ROOT, and drops
+  prose and member order. Members agree only if identities match (=orgfs agree=).
+- *Plan.* For each stripe =i= every member scores =sha256("SPOKE|i|HOST")=; the
+  =REPLICAS= highest scores hold stripe =i= (rendezvous hashing). The rule uses
+  nothing but the declaration, so every host computes the same table. Adding or
+  removing a member moves only the stripes that member wins or loses.
+- *Visibility.* =public=: the site shows ROOT paths and carries the declaration.
+  =private=: the site hides ROOT paths and omits the declaration file. =sealed=:
+  would mean encrypted; orgfs has no encryption, so =put= and =site= refuse it
+  rather than pretend.
+
+** Why this shape
+
+I kept the suggested shape, with two choices argued here.
+
+1. One spoke per file. A file that declares several spokes would need a rule for
+   which one a host is asked about, and that rule would not be in the file. One
+   file, one identity.
+2. ROOT is a path as every member sees it. A host reaches another member's storage
+   through its sshfs mount, and the declaration is the same on every host, so the
+   mount must sit at the same path on all of them (a bind mount or a symlink on the
+   owning host does it). The cost is a little tidiness on each host; the gain is
+   that nothing host-specific is written anywhere, which keeps "every host holds
+   the file identically" true.
+
+* On-disk layout
+
+#+BEGIN_EXAMPLE
+ROOT/.orgfs/SPOKE/<sha256-of-whole-file>/
+    1.of.5   2.of.5 ...      the slices this member holds (per the plan)
+    MANIFEST                 on every member: slice<TAB>size<TAB>sha256, one line per slice
+#+END_EXAMPLE
+
+Slices are =ceil(size/STRIPES)= bytes each; the last ones may be short or empty.
+The object's name is the SHA-256 of the whole file.
+
+* Commands
+
+| Command                        | Does                                                          |
+|--------------------------------+---------------------------------------------------------------|
+| =orgfs check DECL [--no-mounts]= | parse, sanity-check, verify roots; print the identity       |
+| =orgfs plan DECL [--as HOST]=  | stripe -> holders; with =--as=, only the stripes HOST holds    |
+| =orgfs agree DECL OTHER...=    | refuse unless every identity is the same                       |
+| =orgfs put DECL FILE=          | cut, write slices and manifests; print the object ID           |
+| =orgfs get DECL ID OUT=        | reassemble, verifying each slice and then the whole            |
+| =orgfs verify DECL=            | every slice good on REPLICAS planned members, whole hash right |
+| =orgfs site DECL OUT=          | static HTML site: no script, no inline style, one CSS file     |
+| =orgfs demo [DIR]=             | the licensing demo over five local directories                 |
+
+Behaviour worth knowing:
+
+- =put= needs every member usable, and refuses an sshfs root that is not a mounted
+  mount point (an unmounted sshfs directory is just a local directory, and writing
+  to it would put the slice on the wrong disk).
+- =get= and =verify= tolerate unreachable members. =get= warns loudly
+  (=CORRUPT slice ...=) about any copy that does not match the manifest, uses a good
+  copy, and fails if no good copy exists or the reassembled bytes do not hash to
+  the ID. =verify= is stricter: every planned holder must have a good copy.
+
+* Quick start
+
+#+BEGIN_SRC sh
+make check          # tests, in Python, driving bin/orgfs as a black box
+make prove-red      # plant faults on a copy; each must turn a test red
+make demo           # five local directories stand in for five hosts
+make site           # writes _site/
+sh bin/orgfs check examples/licensing.org --no-mounts
+#+END_SRC
+
+Shells and awks: =make check-shells= repeats the suite under dash, bash and
+busybox ash with gawk and mawk (slow). Or by hand:
+=ORGFS_SHELL=dash ORGFS_AWK=mawk python3 tests/test_orgfs.py=.
+
+** The demo
+
+=orgfs demo= writes a throwaway declaration =licensing= (5 stripes, 2 replicas)
+over five local directories, stores two files in it (=share/licensing.tsv=, a
+four-column register of name, licence, source, why-we-use-it, and the same
+register rendered as text), gets both back, checks the bytes, verifies, then moves
+one member's data aside to show =get= still works and =verify= reports the lost
+redundancy.
+
+** The site
+
+=orgfs site= renders =index.html= (what orgfs is, the declaration, the plan table),
+=licensing.html= (the register), =rights.html= (Your rights on this site), and
+=orgfs.css=. There is no JavaScript, no inline script, no =style= attribute, and
+nothing is loaded from another host. =rights.html= says that the site keeps no
+access log, sets no cookies and loads nothing from another host. The first two are
+about how the server is run; configure the server to match, because the tool
+cannot make them true.
+
+* Tests
+
+=tests/test_orgfs.py= (Python 3, standard library only) drives =bin/orgfs= as a
+black box. It computes the rendezvous plan again, independently, so the tool's
+hashing is checked against a second implementation of the rule above.
+=tests/prove_red.py= (=make prove-red=) plants faults in a copy of the tool and
+requires each to turn a test red; it ends =PROVE-RED OK (N of N caught; control
+passed)=. When something gets past the tests, add a test and a planted fault.
+
+* CI
+
+=.github/workflows/ci.yml= runs on a push to main and on manual dispatch only. The
+repository is public and the runner is self-hosted, so a pull request from a fork
+must never run on it. On main, if =/srv/orgfs/site= exists and is writable, the job
+syncs =_site/= into it.
+
+* Honest limits
+
+- *Replication only.* No parity, no erasure coding: REPLICAS = 2 survives the loss
+  of one holder per stripe, no more, at twice the storage.
+- *No confidentiality.* Slicing a file spreads it; it does not hide it. Anyone who
+  can read enough members can reassemble. Nothing is encrypted. =sealed= is refused.
+- *Transports:* =local= and =sshfs= only. There is no network code in orgfs; sshfs
+  mounts are made by you.
+- *No repair, no rebalancing, no delete, no listing.* =verify= tells you what is
+  wrong; fixing it is by hand for now. Changing the declaration changes the plan,
+  and data already stored is not moved.
+- *Size.* A slice is read with one =dd= block, so a slice over 2 GB is refused,
+  and memory use grows with slice size.
+- *Mount detection* reads =/proc/mounts= (override: =ORGFS_MOUNTS=); it checks that
+  ROOT is a mount point, not that it is an sshfs mount, and it does not unescape
+  paths (ROOT may not contain whitespace).
+- *Concurrency:* two writers to one spoke at once are not coordinated.
+- *Trust:* hashes catch damage and mix-ups, not a member who rewrites a slice and
+  the manifest on every member together; =get= still catches that through the
+  whole-file hash only when the object name (the ID) came from somewhere you trust.
+- Portability was exercised on Linux only.
+
+* Licences
+
+The code is GPL-3.0-or-later; =COPYING= is the GPL v3 text as shipped by Debian in
+=/usr/share/common-licenses/GPL-3=. Prose is CC-BY-SA-4.0. The register in
+=share/licensing.tsv= states the licence of each program the project uses. Where
+the licence could be read from a Debian =copyright= file on the machine this was
+written on (dash, gawk, mawk, make, git, OpenSSH), that is what it says; the
+others are stated from the project's own known licence, and anything not confirmed
+is marked =unchecked= rather than guessed. The source URLs in the register were not
+fetched when it was written.

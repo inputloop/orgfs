@@ -1,0 +1,725 @@
+#!/bin/sh
+# orgfs - fabricated spoke: literate distributed file systems per symmetric declaration
+#
+# Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.  It is distributed WITHOUT ANY WARRANTY; see
+# the file COPYING.
+#
+# POSIX sh plus awk, sha256sum (or shasum -a 256), dd, sort, cut, tr, sed.
+# No Python, no bashisms.  ORGFS_AWK picks the awk (default: awk).
+
+set -u
+LC_ALL=C
+export LC_ALL
+AWK=${ORGFS_AWK:-awk}
+VERSION=0.1.0
+HERE=$(cd "$(dirname "$0")" && pwd)
+SHARE=${ORGFS_SHARE:-$HERE/../share}
+
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/orgfs.XXXXXX") || exit 1
+trap 'rm -rf "$TMP"' EXIT
+trap 'exit 1' INT TERM HUP
+
+die() { printf 'orgfs: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'orgfs: warning: %s\n' "$*" >&2; }
+
+if command -v sha256sum >/dev/null 2>&1; then
+  sha_stdin() { sha256sum | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha_stdin() { shasum -a 256 | cut -d' ' -f1; }
+else
+  die "need sha256sum or shasum"
+fi
+sha_str() { printf '%s' "$1" | sha_stdin; }
+sha_file() { sha_stdin < "$1"; }
+size_of() { wc -c < "$1" | tr -d ' '; }
+
+usage() {
+  cat <<'EOF'
+usage: orgfs COMMAND ...
+  check DECL [--no-mounts]   parse and sanity-check a declaration; print identity
+  plan DECL [--as HOST]      which stripes each member holds (rendezvous hashing)
+  agree DECL OTHER...        refuse unless every declaration has the same identity
+  put DECL FILE              cut FILE into stripes and write them to the members
+  get DECL ID OUT            reassemble object ID into OUT, verifying every hash
+  verify DECL                every slice on REPLICAS members, every hash right
+  site DECL OUT              render a static, script-free HTML site into OUT
+  demo [DIR]                 the licensing demo over 5 local directories
+  version
+EOF
+}
+
+# ------------------------------------------------------------------ parse
+# Reads the Org declaration, ignores prose, prints normalized property data
+# (unsorted) on stdout; complaints on stderr, status 1 if anything is wrong.
+PARSE_AWK='
+function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+function fail(m) { printf "orgfs: %s:%d: %s\n", FILENAME, NR, m > "/dev/stderr"; bad = 1 }
+function endfail(m) { printf "orgfs: %s: %s\n", FILENAME, m > "/dev/stderr"; bad = 1 }
+BEGIN { bad = 0; cur = ""; drawer = 0; nsp = 0; nm = 0 }
+/^\*+[ \t]/ {
+  drawer = 0; cur = ""
+  n = 0
+  while (substr($0, n + 1, 1) == "*") n++
+  nw = split(trim(substr($0, n + 1)), w, /[ \t]+/)
+  if (n == 1 && w[1] == "spoke") {
+    if (nw != 2) fail("heading must read: spoke NAME")
+    else if (++nsp > 1) fail("only one spoke per declaration")
+    else { name = w[2]; cur = "spoke" }
+  } else if (n == 2 && w[1] == "member") {
+    if (nw != 2) fail("heading must read: member HOST")
+    else if (w[2] in seen) fail("duplicate member " w[2])
+    else { host = w[2]; seen[host] = 1; order[++nm] = host; cur = "member" }
+  }
+  next
+}
+/^[ \t]*:PROPERTIES:[ \t\r]*$/ { if (cur != "") drawer = 1; next }
+/^[ \t]*:END:[ \t\r]*$/ { drawer = 0; next }
+drawer {
+  line = trim($0)
+  if (line == "") next
+  if (!match(line, /^:[A-Za-z_-]+:/)) { fail("not a property line: " line); next }
+  key = toupper(substr(line, 2, RLENGTH - 2))
+  val = trim(substr(line, RLENGTH + 1))
+  if (val == "") { fail("empty value for " key); next }
+  if (cur == "spoke") {
+    if (key !~ /^(RING|STRIPES|REPLICAS|VISIBILITY)$/) { fail("unknown spoke property " key); next }
+    if (key in sp) { fail("duplicate property " key); next }
+    sp[key] = val
+  } else {
+    if (key !~ /^(ROOT|TRANSPORT)$/) { fail("unknown member property " key); next }
+    if ((host, key) in mp) { fail("duplicate property " key " on member " host); next }
+    mp[host, key] = val
+  }
+  next
+}
+END {
+  if (bad) exit 1
+  if (nsp == 0) endfail("no \"* spoke NAME\" heading")
+  else {
+    if (name !~ /^[a-z0-9][a-z0-9_-]*$/) endfail("spoke name must match [a-z0-9][a-z0-9_-]*")
+    split("RING STRIPES REPLICAS VISIBILITY", req, " ")
+    for (j = 1; j <= 4; j++) if (!(req[j] in sp)) endfail("spoke " name " lacks property " req[j])
+    ring = toupper(sp["RING"]); vis = tolower(sp["VISIBILITY"])
+    st = sp["STRIPES"]; rp = sp["REPLICAS"]
+    if (("RING" in sp) && ring !~ /^(GRAIN|GREAT|GRAND)$/) endfail("RING must be GRAIN, GREAT or GRAND")
+    if (("VISIBILITY" in sp) && vis !~ /^(public|private|sealed)$/) endfail("VISIBILITY must be public, private or sealed")
+    if (("STRIPES" in sp) && (st !~ /^[0-9]+$/ || st + 0 < 1 || st + 0 > 256)) endfail("STRIPES must be an integer 1..256")
+    if (("REPLICAS" in sp) && (rp !~ /^[0-9]+$/ || rp + 0 < 1)) endfail("REPLICAS must be an integer >= 1")
+    if (nm < 1) endfail("no \"** member HOST\" headings")
+    else if (("REPLICAS" in sp) && rp ~ /^[0-9]+$/ && rp + 0 > nm) endfail("REPLICAS (" rp ") exceeds the number of members (" nm ")")
+    for (j = 1; j <= nm; j++) {
+      h = order[j]
+      if (h !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) endfail("bad member name " h)
+      if (!((h, "ROOT") in mp)) endfail("member " h " lacks ROOT")
+      if (!((h, "TRANSPORT") in mp)) endfail("member " h " lacks TRANSPORT")
+      if ((h, "ROOT") in mp) {
+        r = mp[h, "ROOT"]
+        if (r !~ /^\// || r ~ /[ \t]/) endfail("member " h ": ROOT must be an absolute path without whitespace")
+        sub(/\/+$/, "", r)
+        if (r == "") endfail("member " h ": ROOT must not be /")
+        mp[h, "ROOT"] = r
+      }
+      if ((h, "TRANSPORT") in mp) {
+        t = tolower(mp[h, "TRANSPORT"])
+        if (t !~ /^(local|sshfs)$/) endfail("member " h ": TRANSPORT must be local or sshfs")
+        mp[h, "TRANSPORT"] = t
+      }
+    }
+  }
+  if (bad) exit 1
+  printf "spoke\tname\t%s\n", name
+  printf "spoke\tRING\t%s\n", ring
+  printf "spoke\tSTRIPES\t%d\n", st + 0
+  printf "spoke\tREPLICAS\t%d\n", rp + 0
+  printf "spoke\tVISIBILITY\t%s\n", vis
+  for (j = 1; j <= nm; j++) {
+    h = order[j]
+    printf "member\t%s\tROOT\t%s\n", h, mp[h, "ROOT"]
+    printf "member\t%s\tTRANSPORT\t%s\n", h, mp[h, "TRANSPORT"]
+  }
+}
+'
+
+parse_into() { # FILE OUT
+  [ -f "$1" ] || die "cannot read declaration: $1"
+  $AWK "$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $1"
+  sort "$TMP/raw" > "$2"
+}
+
+ident_of() { { printf 'orgfs-decl-1\n'; cat "$1"; } | sha_stdin; }
+
+spoke_val() { $AWK -F'\t' -v k="$1" '$1=="spoke"&&$2==k{print $3}' "$TMP/norm"; }
+member_val() { $AWK -F'\t' -v h="$1" -v k="$2" '$1=="member"&&$2==h&&$3==k{print $4}' "$TMP/norm"; }
+root_of() { member_val "$1" ROOT; }
+tr_of() { member_val "$1" TRANSPORT; }
+
+load() { # DECL -> ID SPOKE RING STRIPES REPLICAS VIS MEMBERS
+  parse_into "$1" "$TMP/norm"
+  ID=$(ident_of "$TMP/norm")
+  SPOKE=$(spoke_val name); RING=$(spoke_val RING)
+  STRIPES=$(spoke_val STRIPES); REPLICAS=$(spoke_val REPLICAS)
+  VIS=$(spoke_val VISIBILITY)
+  MEMBERS=$($AWK -F'\t' '$1=="member"&&$3=="ROOT"{print $2}' "$TMP/norm")
+}
+
+# ------------------------------------------------------------------ mounts
+is_mounted() {
+  _f=${ORGFS_MOUNTS:-/proc/mounts}
+  [ -r "$_f" ] || return 1
+  $AWK -v p="$1" '$2==p{f=1} END{exit f?0:1}' "$_f"
+}
+
+WHY=
+member_up() { # HOST: usable root? sets WHY when not
+  WHY=
+  _r=$(root_of "$1")
+  [ -d "$_r" ] || { WHY="ROOT $_r is not a directory"; return 1; }
+  if [ "$(tr_of "$1")" = sshfs ]; then
+    is_mounted "$_r" || { WHY="TRANSPORT sshfs but $_r is not a mount point"; return 1; }
+  fi
+  return 0
+}
+
+sdir() { printf '%s/.orgfs/%s/%s' "$(root_of "$1")" "$SPOKE" "$2"; }
+
+# ------------------------------------------------------------------ plan
+make_plan() { # -> $TMP/plan, lines: stripe TAB holder holder ...
+  : > "$TMP/plan"
+  _i=1
+  while [ "$_i" -le "$STRIPES" ]; do
+    _hs=$(for _h in $MEMBERS; do printf '%s %s\n' "$(sha_str "$SPOKE|$_i|$_h")" "$_h"; done \
+          | sort -r | head -n "$REPLICAS" | cut -d' ' -f2 | sort | tr '\n' ' ')
+    printf '%s\t%s\n' "$_i" "${_hs% }" >> "$TMP/plan"
+    _i=$((_i + 1))
+  done
+}
+holders_of() { $AWK -F'\t' -v i="$1" '$1==i{print $2}' "$TMP/plan"; }
+
+cmd_check() {
+  _decl=${1:-}; [ -n "$_decl" ] || die "check: need DECL"
+  _mounts=1
+  [ "${2:-}" = "--no-mounts" ] && _mounts=0
+  load "$_decl"
+  _bad=0
+  if [ "$_mounts" = 1 ]; then
+    for _h in $MEMBERS; do
+      member_up "$_h" || { printf 'orgfs: member %s: %s\n' "$_h" "$WHY" >&2; _bad=1; }
+    done
+  fi
+  [ "$_bad" = 0 ] || die "check failed: $_decl"
+  _n=$(printf '%s\n' "$MEMBERS" | wc -l | tr -d ' ')
+  printf 'spoke\t%s\n' "$SPOKE"
+  printf 'ring\t%s\n' "$RING"
+  printf 'stripes\t%s\n' "$STRIPES"
+  printf 'replicas\t%s\n' "$REPLICAS"
+  printf 'visibility\t%s\n' "$VIS"
+  printf 'members\t%s\n' "$_n"
+  printf 'identity\t%s\n' "$ID"
+  printf 'check: OK\n'
+}
+
+cmd_plan() {
+  _decl=${1:-}; [ -n "$_decl" ] || die "plan: need DECL"
+  _as=
+  if [ "${2:-}" = "--as" ]; then _as=${3:-}; [ -n "$_as" ] || die "plan: --as needs HOST"; fi
+  load "$_decl"
+  if [ -n "$_as" ]; then
+    printf '%s\n' "$MEMBERS" | grep -qx -- "$_as" || die "plan: $_as is not a member of $SPOKE"
+  fi
+  make_plan
+  printf '# spoke %s identity %s\n' "$SPOKE" "$ID"
+  if [ -n "$_as" ]; then
+    printf '# as %s\n' "$_as"
+    $AWK -F'\t' -v h="$_as" '{ n = split($2, a, " "); for (k = 1; k <= n; k++) if (a[k] == h) { gsub(/ /, ",", $2); print $1 "\t" $2 } }' "$TMP/plan"
+  else
+    $AWK -F'\t' '{ gsub(/ /, ",", $2); print $1 "\t" $2 }' "$TMP/plan"
+  fi
+}
+
+cmd_agree() {
+  [ $# -ge 2 ] || die "agree: need DECL and at least one OTHER"
+  _first=
+  _differ=0
+  for _f in "$@"; do
+    parse_into "$_f" "$TMP/agree"
+    _id=$(ident_of "$TMP/agree")
+    printf '%s  %s\n' "$_id" "$_f"
+    if [ -z "$_first" ]; then _first=$_id; elif [ "$_id" != "$_first" ]; then _differ=1; fi
+  done
+  [ "$_differ" = 0 ] || die "declarations DISAGREE: identities differ"
+  printf 'agree: OK (%s declarations, identity %s)\n' "$#" "$_first"
+}
+
+# ------------------------------------------------------------------ slices
+slice_ok() { # FILE SIZE SHA
+  [ "$(size_of "$1")" = "$2" ] || return 1
+  [ "$(sha_file "$1")" = "$3" ]
+}
+whole_ok() { # FILE ID
+  [ "$(sha_file "$1")" = "$2" ]
+}
+manifest_ok() {
+  $AWK -F'\t' -v n="$STRIPES" '
+    NF != 3 || $1 != (NR ".of." n) || $2 !~ /^[0-9]+$/ || length($3) != 64 || $3 ~ /[^0-9a-f]/ { bad = 1 }
+    END { exit (bad || NR != n) ? 1 : 0 }' "$TMP/manifest"
+}
+manifest_field() { $AWK -F'\t' -v i="$1" -v c="$2" 'NR==i{print $c}' "$TMP/manifest"; }
+
+# 0 ok, 1 no manifest anywhere, 2 manifests disagree or malformed (MFAIL says)
+MFAIL=
+fetch_manifest() { # ID
+  _have=0
+  for _h in $MEMBERS; do
+    member_up "$_h" || continue
+    _m="$(sdir "$_h" "$1")/MANIFEST"
+    [ -f "$_m" ] || continue
+    if [ "$_have" = 0 ]; then
+      cp "$_m" "$TMP/manifest"; _have=1; _mh=$_h
+    elif ! cmp -s "$_m" "$TMP/manifest"; then
+      MFAIL="manifest on $_h differs from the one on $_mh"; return 2
+    fi
+  done
+  [ "$_have" = 1 ] || return 1
+  manifest_ok || { MFAIL="malformed manifest (from $_mh)"; return 2; }
+  return 0
+}
+
+ASM_FAIL=
+assemble() { # ID DEST [q]: any good copy of each slice, from any reachable member
+  : > "$2"
+  a_i=1
+  while [ "$a_i" -le "$STRIPES" ]; do
+    a_size=$(manifest_field "$a_i" 2); a_sha=$(manifest_field "$a_i" 3)
+    a_ok=0
+    for a_h in $MEMBERS; do
+      member_up "$a_h" || continue
+      a_f="$(sdir "$a_h" "$1")/$a_i.of.$STRIPES"
+      [ -f "$a_f" ] || continue
+      if slice_ok "$a_f" "$a_size" "$a_sha"; then
+        cat "$a_f" >> "$2"; a_ok=1; break
+      elif [ "${3:-}" != q ]; then
+        warn "CORRUPT slice $a_i.of.$STRIPES on $a_h does not match the manifest (size or sha256)"
+      fi
+    done
+    [ "$a_ok" = 1 ] || { ASM_FAIL="slice $a_i.of.$STRIPES has no good copy on any reachable member"; return 1; }
+    a_i=$((a_i + 1))
+  done
+}
+
+cmd_put() {
+  _decl=${1:-}; _file=${2:-}
+  [ -n "$_decl" ] && [ -n "$_file" ] || die "put: need DECL FILE"
+  load "$_decl"
+  [ "$VIS" != sealed ] || die "put: VISIBILITY sealed needs encryption, which orgfs does not have yet; refusing"
+  [ -f "$_file" ] || die "put: cannot read $_file"
+  for _h in $MEMBERS; do
+    member_up "$_h" || die "put: member $_h unusable: $WHY"
+  done
+  make_plan
+  _size=$(size_of "$_file")
+  _id=$(sha_file "$_file")
+  _sz=$(( (_size + STRIPES - 1) / STRIPES ))
+  [ "$_sz" -ge 1 ] || _sz=1
+  [ "$_sz" -le 2000000000 ] || die "put: slices over 2 GB are not supported (file too large for $STRIPES stripes)"
+  : > "$TMP/manifest"
+  _i=1
+  while [ "$_i" -le "$STRIPES" ]; do
+    _sl="$TMP/slice.$_i"
+    dd if="$_file" of="$_sl" bs="$_sz" skip=$((_i - 1)) count=1 2>/dev/null
+    [ -f "$_sl" ] || : > "$_sl"
+    printf '%s.of.%s\t%s\t%s\n' "$_i" "$STRIPES" "$(size_of "$_sl")" "$(sha_file "$_sl")" >> "$TMP/manifest"
+    for _h in $(holders_of "$_i"); do
+      _d=$(sdir "$_h" "$_id")
+      mkdir -p "$_d" || die "put: cannot create $_d"
+      cp "$_sl" "$_d/$_i.of.$STRIPES.part" && mv "$_d/$_i.of.$STRIPES.part" "$_d/$_i.of.$STRIPES" \
+        || die "put: cannot write slice $_i to $_h"
+    done
+    rm -f "$_sl"
+    _i=$((_i + 1))
+  done
+  for _h in $MEMBERS; do
+    _d=$(sdir "$_h" "$_id")
+    mkdir -p "$_d" && cp "$TMP/manifest" "$_d/MANIFEST" || die "put: cannot write manifest to $_h"
+  done
+  printf '%s\n' "$_id"
+}
+
+cmd_get() {
+  _decl=${1:-}; _id=${2:-}; _out=${3:-}
+  [ -n "$_decl" ] && [ -n "$_id" ] && [ -n "$_out" ] || die "get: need DECL ID OUT"
+  case $_id in *[!0-9a-f]*) die "get: ID must be 64 lowercase hex digits";; esac
+  [ "${#_id}" = 64 ] || die "get: ID must be 64 lowercase hex digits"
+  load "$_decl"
+  for _h in $MEMBERS; do
+    member_up "$_h" || warn "member $_h unavailable ($WHY); using the others"
+  done
+  fetch_manifest "$_id"; _rc=$?
+  [ "$_rc" != 1 ] || die "get: no manifest for $_id on any reachable member"
+  [ "$_rc" = 0 ] || die "get: $MFAIL"
+  assemble "$_id" "$TMP/whole" || die "get: $ASM_FAIL"
+  whole_ok "$TMP/whole" "$_id" || die "get: WHOLE-FILE HASH MISMATCH: reassembled bytes do not hash to $_id; not writing $_out"
+  cp "$TMP/whole" "$_out" || die "get: cannot write $_out"
+  printf 'get: OK %s -> %s (%s bytes)\n' "$_id" "$_out" "$(size_of "$_out")"
+}
+
+verify_object() { # ID -> prints OK/FAIL lines, status 0/1
+  v_id=$1
+  fetch_manifest "$v_id"; v_rc=$?
+  case $v_rc in
+    1) echo "FAIL $v_id: no manifest on any reachable member"; return 1;;
+    2) echo "FAIL $v_id: $MFAIL"; return 1;;
+  esac
+  v_bad=0; v_i=1
+  while [ "$v_i" -le "$STRIPES" ]; do
+    v_size=$(manifest_field "$v_i" 2); v_sha=$(manifest_field "$v_i" 3)
+    v_good=0; v_notes=
+    for v_h in $(holders_of "$v_i"); do
+      if ! member_up "$v_h"; then v_notes="$v_notes $v_h:down"; continue; fi
+      v_f="$(sdir "$v_h" "$v_id")/$v_i.of.$STRIPES"
+      if [ ! -f "$v_f" ]; then v_notes="$v_notes $v_h:missing"
+      elif slice_ok "$v_f" "$v_size" "$v_sha"; then v_good=$((v_good + 1))
+      else v_notes="$v_notes $v_h:corrupt"; fi
+    done
+    if [ "$v_good" -ge "$REPLICAS" ]; then :; else
+      echo "FAIL $v_id slice $v_i.of.$STRIPES: $v_good of $REPLICAS copies good;$v_notes"; v_bad=1
+    fi
+    v_i=$((v_i + 1))
+  done
+  if assemble "$v_id" "$TMP/vwhole" q && whole_ok "$TMP/vwhole" "$v_id"; then :; else
+    echo "FAIL $v_id: cannot reassemble a file hashing to the ID ${ASM_FAIL:+($ASM_FAIL)}"; v_bad=1
+  fi
+  [ "$v_bad" = 0 ] && echo "OK $v_id slices=$STRIPES replicas=$REPLICAS"
+  return "$v_bad"
+}
+
+cmd_verify() {
+  _decl=${1:-}; [ -n "$_decl" ] || die "verify: need DECL"
+  load "$_decl"
+  make_plan
+  : > "$TMP/ids"
+  for _h in $MEMBERS; do
+    member_up "$_h" || { warn "member $_h unavailable ($WHY)"; continue; }
+    ls "$(root_of "$_h")/.orgfs/$SPOKE" 2>/dev/null >> "$TMP/ids"
+  done
+  _ids=$(grep -E '^[0-9a-f]{64}$' "$TMP/ids" | sort -u)
+  [ -n "$_ids" ] || { echo "verify: no objects in spoke $SPOKE"; return 0; }
+  _fail=0; _n=0
+  for _o in $_ids; do
+    _n=$((_n + 1))
+    verify_object "$_o" || _fail=1
+  done
+  if [ "$_fail" = 0 ]; then echo "verify: OK ($_n objects)"; else echo "verify: FAIL"; return 1; fi
+}
+
+# ------------------------------------------------------------------ register
+REGISTER_TXT_AWK='
+BEGIN { FS = "\t" }
+NR == 1 { next }
+NF != 4 { printf "orgfs: register line %d has %d fields, want 4\n", NR, NF > "/dev/stderr"; bad = 1; next }
+{ printf "%s\n  licence: %s\n  source:  %s\n  why:     %s\n\n", $1, $2, $3, $4 }
+END { exit bad ? 1 : 0 }
+'
+
+# ------------------------------------------------------------------ site
+esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
+esc_s() { printf '%s' "$1" | esc; }
+cur() { [ "$1" = "$2" ] && printf ' aria-current="page"'; return 0; }
+
+write_css() {
+  cat > "$1" <<'EOF'
+:root { color-scheme: light dark; --bg: #ffffff; --fg: #111111; --mut: #444444; --link: #0b3d91; --rule: #767676; --band: #f0f0f0; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --fg: #eeeeee; --mut: #c4c4c4; --link: #9ec1ff; --rule: #8a8a8a; --band: #1e1e1e; }
+}
+html { font-size: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; line-height: 1.55; margin: 0 auto; max-width: 72ch; padding: 0 1rem 3rem; }
+a { color: var(--link); }
+a:focus-visible, .scroll:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 1rem; top: 1rem; background: var(--bg); padding: .5rem; }
+header { border-bottom: 2px solid var(--rule); padding: 1rem 0 .5rem; }
+.brand { font-size: 1.6rem; font-weight: 700; margin: 0; }
+nav ul { list-style: none; margin: .5rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
+nav a[aria-current="page"] { font-weight: 700; text-decoration: none; border-bottom: 3px solid currentColor; }
+h1 { font-size: 1.7rem; line-height: 1.2; }
+h2 { font-size: 1.3rem; margin-top: 2rem; }
+pre { background: var(--band); border: 1px solid var(--rule); padding: .75rem; overflow-x: auto; white-space: pre; }
+code { font-family: ui-monospace, monospace; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+caption { text-align: left; font-weight: 700; padding: .25rem 0; }
+th, td { border: 1px solid var(--rule); padding: .35rem .5rem; text-align: left; vertical-align: top; }
+thead th { background: var(--band); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
+dt { font-weight: 700; }
+dd { margin: 0; }
+footer { border-top: 2px solid var(--rule); margin-top: 3rem; padding-top: .75rem; color: var(--mut); font-size: .95rem; }
+EOF
+}
+
+html_head() { # TITLE PAGE
+  cat <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'">
+<title>$1 - orgfs</title>
+<link rel="stylesheet" href="orgfs.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header>
+<p class="brand">orgfs</p>
+<nav aria-label="Site">
+<ul>
+<li><a href="index.html"$(cur index "$2")>About</a></li>
+<li><a href="licensing.html"$(cur licensing "$2")>Licensing stack</a></li>
+<li><a href="rights.html"$(cur rights "$2")>Your rights on this site</a></li>
+</ul>
+</nav>
+</header>
+<main id="main">
+EOF
+}
+
+html_foot() {
+  cat <<EOF
+</main>
+<footer>
+<p>orgfs $VERSION. Code: GPL-3.0-or-later. Prose and this site&#39;s text: CC-BY-SA-4.0.
+Copyright 2026 Corwin Brust &lt;corwin@bru.st&gt; and Contributors.
+Source: <a href="https://github.com/inputloop/orgfs">github.com/inputloop/orgfs</a>.</p>
+</footer>
+</body>
+</html>
+EOF
+}
+
+cmd_site() {
+  _decl=${1:-}; _out=${2:-}
+  [ -n "$_decl" ] && [ -n "$_out" ] || die "site: need DECL OUT"
+  load "$_decl"
+  [ "$VIS" != sealed ] || die "site: VISIBILITY sealed declarations are not published"
+  [ -f "$SHARE/licensing.tsv" ] || die "site: missing $SHARE/licensing.tsv"
+  mkdir -p "$_out" || die "site: cannot create $_out"
+  make_plan
+  write_css "$_out/orgfs.css"
+  cp "$SHARE/licensing.tsv" "$_out/licensing.tsv"
+  $AWK "$REGISTER_TXT_AWK" "$SHARE/licensing.tsv" > "$_out/licensing.txt" || die "site: bad register"
+  _e_name=$(esc_s "$SPOKE")
+  _rooturl=
+  {
+    html_head "About" index
+    cat <<EOF
+<h1>orgfs</h1>
+<p>orgfs is a small tool that spreads files across the machines of a group as
+<em>stripes</em> (byte slices), keeps more than one copy of each stripe, and lets
+any machine put the pieces back together and check that nothing was altered on the
+way. The group, the stripes and the copies are all described by one plain-text
+Org file, the <em>declaration</em>, which every machine holds identically. Each
+machine works out its own part from that same file; no machine is in charge.</p>
+<p>This site is built by orgfs from such a declaration. It shows the declaration,
+the plan it produces, and the licences of the free software the project itself
+relies on, so that you can see whose work is in use and on what terms.</p>
+
+<h2>The declaration</h2>
+<p>Spoke <code>$_e_name</code>, identity (sha256 of its normalized properties):</p>
+<pre>$ID</pre>
+<dl>
+<dt>Ring</dt><dd>$(esc_s "$RING")</dd>
+<dt>Stripes</dt><dd>$(esc_s "$STRIPES")</dd>
+<dt>Replicas</dt><dd>$(esc_s "$REPLICAS")</dd>
+<dt>Visibility</dt><dd>$(esc_s "$VIS")</dd>
+</dl>
+<div class="scroll" role="region" aria-label="Members table" tabindex="0">
+<table>
+<caption>Members of spoke $_e_name</caption>
+<thead><tr><th scope="col">Member</th><th scope="col">Transport</th><th scope="col">Root</th></tr></thead>
+<tbody>
+EOF
+    for _h in $MEMBERS; do
+      if [ "$VIS" = public ]; then _root=$(esc_s "$(root_of "$_h")"); else _root="not published"; fi
+      printf '<tr><th scope="row">%s</th><td>%s</td><td><code>%s</code></td></tr>\n' \
+        "$(esc_s "$_h")" "$(esc_s "$(tr_of "$_h")")" "$_root"
+    done
+    cat <<EOF
+</tbody>
+</table>
+</div>
+EOF
+    if [ "$VIS" = public ]; then
+      cat <<EOF
+<p>The declaration file itself, prose included: <a href="declaration.org">declaration.org</a>.</p>
+EOF
+    fi
+    cat <<EOF
+
+<h2>The plan</h2>
+<p>For each stripe, every member scores sha256 of <code>spoke|stripe|member</code>;
+the $(esc_s "$REPLICAS") highest scores hold the stripe. Because the rule uses only
+the declaration, every machine computes the same table.</p>
+<div class="scroll" role="region" aria-label="Plan table" tabindex="0">
+<table>
+<caption>Which member holds which stripe</caption>
+<thead><tr><th scope="col">Stripe</th>
+EOF
+    for _h in $MEMBERS; do printf '<th scope="col">%s</th>' "$(esc_s "$_h")"; done
+    printf '</tr></thead>\n<tbody>\n'
+    $AWK -F'\t' -v members="$(printf '%s' "$MEMBERS" | tr '\n' ' ')" '
+      BEGIN { nm = split(members, m, " ") }
+      { delete hold; n = split($2, a, " "); for (k = 1; k <= n; k++) hold[a[k]] = 1
+        printf "<tr><th scope=\"row\">%s</th>", $1
+        for (k = 1; k <= nm; k++) printf "<td>%s</td>", (m[k] in hold) ? "holds" : "no"
+        printf "</tr>\n" }' "$TMP/plan"
+    cat <<EOF
+</tbody>
+</table>
+</div>
+EOF
+    html_foot
+  } > "$_out/index.html"
+  if [ "$VIS" = public ]; then cp "$_decl" "$_out/declaration.org"; fi
+
+  {
+    html_head "Licensing stack" licensing
+    cat <<EOF
+<h1>The licensing stack</h1>
+<p>These are the programs this project itself uses to build, test, run and serve
+this site, with the licence each one is distributed under and where that licence
+is stated. The table is also available as <a href="licensing.tsv">tab-separated
+data</a> and as <a href="licensing.txt">plain text</a>; orgfs stores those same two
+files in its own demo spoke.</p>
+<p>A licence marked <strong>unchecked</strong> is one we have not confirmed from the
+project&#39;s own licence text. We say so instead of guessing.</p>
+<div class="scroll" role="region" aria-label="Licensing stack table" tabindex="0">
+<table>
+<caption>Software in use, licence, source and reason</caption>
+<thead><tr><th scope="col">Name</th><th scope="col">Licence</th><th scope="col">Source</th><th scope="col">Why we use it</th></tr></thead>
+<tbody>
+EOF
+    $AWK -F'\t' '
+      function e(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); return s }
+      NR == 1 { next }
+      { src = e($3)
+        if ($3 ~ /^https?:\/\//) src = "<a href=\"" src "\">" src "</a>"
+        printf "<tr><th scope=\"row\">%s</th><td>%s</td><td>%s</td><td>%s</td></tr>\n", e($1), e($2), src, e($4) }' "$SHARE/licensing.tsv"
+    cat <<EOF
+</tbody>
+</table>
+</div>
+EOF
+    html_foot
+  } > "$_out/licensing.html"
+
+  {
+    html_head "Your rights on this site" rights
+    cat <<EOF
+<h1>Your rights on this site</h1>
+<p>This page replaces a terms-of-use screen. It says what this site does and does
+not do to you, in plain words.</p>
+<h2>What this site does not do</h2>
+<ul>
+<li>It keeps no access log.</li>
+<li>It sets no cookies.</li>
+<li>It loads nothing from another host: every page and the one style sheet come
+from this same host. There are no scripts, fonts, images, embeds or analytics.</li>
+</ul>
+<h2>What you can check yourself</h2>
+<p>The first statement is a promise by the people who run the server; your browser
+cannot prove it. The other two you can look at: view the source of any page, or the
+network panel of your browser. You will find no script and no address on another
+host that the page fetches.</p>
+<h2>Links to other places</h2>
+<p>Some text links to other sites, such as the project&#39;s source. They are links
+only. Nothing is fetched from them unless you choose to follow one, and then that
+site&#39;s own rules apply.</p>
+<h2>Your licence to the content</h2>
+<p>The program is free software under the GNU General Public License, version 3 or
+(at your option) any later version. The text of this site is licensed under
+Creative Commons Attribution-ShareAlike 4.0. You may copy, study, change and share
+both, on those terms. The <a href="licensing.html">licensing stack</a> page lists
+the licences of the other software involved.</p>
+EOF
+    html_foot
+  } > "$_out/rights.html"
+  printf 'site: wrote %s (index.html licensing.html rights.html orgfs.css)\n' "$_out"
+}
+
+# ------------------------------------------------------------------ demo
+cmd_demo() {
+  _keep=${1:-}
+  [ -f "$SHARE/licensing.tsv" ] || die "demo: missing $SHARE/licensing.tsv"
+  if [ -n "$_keep" ]; then _d=$_keep; mkdir -p "$_d"; else _d=$(mktemp -d "${TMPDIR:-/tmp}/orgfs-demo.XXXXXX"); fi
+  _d=$(cd "$_d" && pwd)
+  _n=1
+  while [ "$_n" -le 5 ]; do mkdir -p "$_d/demo$_n"; _n=$((_n + 1)); done
+  {
+    printf '#+TITLE: licensing (throwaway demo declaration)\n\n* spoke licensing\n:PROPERTIES:\n'
+    printf ':RING: GREAT\n:STRIPES: 5\n:REPLICAS: 2\n:VISIBILITY: public\n:END:\n\n'
+    printf 'Five local directories stand in for five hosts.\n\n'
+    _n=1
+    while [ "$_n" -le 5 ]; do
+      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/demo%s\n:TRANSPORT: local\n:END:\n' "$_n" "$_d" "$_n"
+      _n=$((_n + 1))
+    done
+  } > "$_d/licensing.org"
+  _self=$HERE/$(basename "$0")
+  orgfs_run() { ${ORGFS_SHELL:-sh} "$_self" "$@"; }
+  cp "$SHARE/licensing.tsv" "$_d/licensing.tsv"
+  $AWK "$REGISTER_TXT_AWK" "$_d/licensing.tsv" > "$_d/licensing.txt" || die "demo: bad register"
+  echo "== demo directory: $_d"
+  echo "== check"
+  orgfs_run check "$_d/licensing.org" || exit 1
+  echo "== plan"
+  orgfs_run plan "$_d/licensing.org"
+  echo "== put"
+  _id1=$(orgfs_run put "$_d/licensing.org" "$_d/licensing.tsv") || exit 1
+  _id2=$(orgfs_run put "$_d/licensing.org" "$_d/licensing.txt") || exit 1
+  echo "licensing.tsv  $_id1"
+  echo "licensing.txt  $_id2"
+  echo "== get"
+  mkdir -p "$_d/out"
+  orgfs_run get "$_d/licensing.org" "$_id1" "$_d/out/licensing.tsv" || exit 1
+  orgfs_run get "$_d/licensing.org" "$_id2" "$_d/out/licensing.txt" || exit 1
+  cmp "$_d/licensing.tsv" "$_d/out/licensing.tsv" || die "demo: tsv came back different"
+  cmp "$_d/licensing.txt" "$_d/out/licensing.txt" || die "demo: txt came back different"
+  echo "bytes identical to the originals: yes"
+  echo "== verify"
+  orgfs_run verify "$_d/licensing.org" || exit 1
+  echo "== lose one member (demo3's stored data moved aside)"
+  mv "$_d/demo3/.orgfs" "$_d/demo3-orgfs-aside"
+  orgfs_run get "$_d/licensing.org" "$_id1" "$_d/out/again.tsv" || exit 1
+  cmp "$_d/licensing.tsv" "$_d/out/again.tsv" || die "demo: degraded get came back different"
+  echo "get still works with one member gone: yes"
+  orgfs_run verify "$_d/licensing.org" && echo "(unexpected: verify passed)" || echo "verify reports reduced redundancy, as it should"
+  mv "$_d/demo3-orgfs-aside" "$_d/demo3/.orgfs"
+  orgfs_run verify "$_d/licensing.org" || exit 1
+  echo "== report"
+  echo "spoke licensing: 5 stripes, 2 replicas, 5 members; both files restored and verified."
+  if [ -z "$_keep" ]; then rm -rf "$_d"; else echo "kept: $_d"; fi
+}
+
+# ------------------------------------------------------------------ main
+_cmd=${1:-}
+[ $# -gt 0 ] && shift
+case $_cmd in
+  check) cmd_check "$@";;
+  plan) cmd_plan "$@";;
+  agree) cmd_agree "$@";;
+  put) cmd_put "$@";;
+  get) cmd_get "$@";;
+  verify) cmd_verify "$@";;
+  site) cmd_site "$@";;
+  demo) cmd_demo "$@";;
+  version|-V|--version) echo "orgfs $VERSION";;
+  help|-h|--help|'') usage;;
+  *) usage >&2; die "unknown command: $_cmd";;
+esac

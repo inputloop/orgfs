@@ -1,0 +1,50 @@
+# SECURITY: this repository is public and the runner is self-hosted.  A pull
+# request from a fork would run its own code on our machine, so this workflow
+# deliberately has NO pull_request trigger.  It runs only on a push to main
+# (people who can push are already trusted) and on a manual dispatch.
+# Do not add pull_request, pull_request_target or workflow_run triggers.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, orgfs]
+    steps:
+      # Pinned to the commit the v4 tag named on 2026-11-06, read twice
+      # (GitHub REST API and git ls-remote; both are GitHub's own word).
+      # Move the pin by hand after reading what changed.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check
+        run: make check
+
+      - name: Prove the checks can fail
+        run: make prove-red
+
+      - name: Build the site
+        run: make site
+
+      # Only on main: deploy inside the container this job runs in, if the
+      # live site directory is there and writable.  Otherwise do nothing.
+      - name: Deploy
+        if: github.ref == 'refs/heads/main'
+        run: |
+          dest=/srv/orgfs/site
+          if [ -d "$dest" ] && [ -w "$dest" ]; then
+            if command -v rsync >/dev/null 2>&1; then
+              rsync -a --delete _site/ "$dest"/
+            else
+              find "$dest" -mindepth 1 -delete
+              cp -a _site/. "$dest"/
+            fi
+            echo "deployed _site/ to $dest"
+          else
+            echo "no writable $dest here; not deploying"
+          fi

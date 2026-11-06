@@ -1,0 +1,17 @@
+name	licence	source	why-we-use-it
+dash (sh)	BSD-3-Clause (some files carry other licences; see the Debian copyright file)	http://gondor.apana.org.au/~herbert/dash/	The POSIX shell orgfs is tested under; small, strict, no bashisms.
+busybox (ash)	GPL-2.0-only	https://busybox.net/license.html	A second small shell and set of utilities, so we know orgfs does not lean on GNU extras.
+gawk	GPL-3.0-or-later	https://www.gnu.org/software/gawk/	One of the two awks the declaration parser and site renderer are tested under.
+mawk	GPL-2.0-only	https://invisible-island.net/mawk/	The other tested awk; its smaller feature set keeps the awk code portable.
+GNU coreutils	GPL-3.0-or-later	https://www.gnu.org/software/coreutils/	sha256sum, dd, sort, cut, tr, wc and cp do the byte work.
+GNU make	GPL-3.0-or-later	https://www.gnu.org/software/make/	Runs the check, prove-red, site and demo targets.
+git	GPL-2.0-only (some files LGPL-2.1-or-later or permissive)	https://git-scm.com/about/free-and-open-source	Holds the history of this project and its declarations.
+Python 3 (tests only)	PSF-2.0	https://docs.python.org/3/license.html	Drives the black-box tests from a second language; the tool itself needs no Python.
+nginx	BSD-2-Clause	https://nginx.org/LICENSE	Serves the static site.
+dehydrated	MIT	https://github.com/dehydrated-io/dehydrated	Obtains and renews the site certificate.
+OpenSSH (sshfs transport)	BSD-style, several variants (see the LICENCE file in the OpenSSH source)	https://github.com/openssh/openssh-portable/blob/master/LICENCE	Carries the remote mounts that the sshfs transport reads and writes through.
+sshfs	unchecked	https://github.com/libfuse/sshfs	Provides the mounts under /spokes; licence not yet confirmed from its own source.
+Debian GNU/Linux	Mixed: every package carries its own DFSG-free licence	https://www.debian.org/legal/licenses/	The operating system the hosts run; its packages are the ones listed above.
+Proxmox VE	unchecked (believed AGPL-3.0)	https://www.proxmox.com/	The hypervisor under the hosts; exact licence version wording not yet confirmed.
+GitHub Actions runner	MIT	https://github.com/actions/runner	Runs the CI on a machine we host.
+actions/checkout	MIT	https://github.com/actions/checkout	Fetches the source in CI.
