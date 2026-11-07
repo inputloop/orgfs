@@ -355,9 +355,18 @@ something gets past the tests, add a test and a planted fault.
 
 * CI
 
-=.github/workflows/ci.yml= runs on a push to main and on manual dispatch only. The repository
-is public and the runner is self-hosted, so a pull request from a fork must never run on it.
-On main, if =/srv/orgfs/site= exists and is writable, the job syncs =_site/= into it.
+What you get: every push to main is checked and, only if it is green, published to
+https://orgfs.com, with each run's log public at https://orgfs.com/ci/.
+
+How (chosen 2026-11-06, in place of a GitHub-hosted or GitHub-registered runner): the orgfs
+container builds itself. A builder there fetches main; if main has moved it runs =make check=,
+=make prove-red= and =make site=, and deploys =_site/= only when all three pass. It looks every
+4 minutes, and a push webhook to =https://orgfs.com/hook= asks it to look at once.
+
+Judged: the webhook is a nudge, not an instruction. Nothing in the request is read or trusted
+and it carries no secret; what is built is only what =git fetch= returns from the public repo,
+so a forged poke can at most cause an extra look. Would be wrong if: a poke could choose what is
+built, or a run could deploy without all three steps green.
 
 * NOT CHECKED
 
