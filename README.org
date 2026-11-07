@@ -7,42 +7,145 @@
 Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors.
 Code: GPL-3.0-or-later (see =COPYING=). Prose, including this file: CC-BY-SA-4.0.
 
-* What orgfs is
+*Status:* orgfs 0.2.0, 2026-11-06, before 1.0. Linux only. 104 tests passed here
+(=make check=) under dash, bash and busybox sh, each with gawk and mawk. 38 planted
+faults were each caught. Nothing has run on a ghostwheel host yet. See
+[[*What was observed][What was observed]] for the commands and [[*NOT CHECKED][NOT CHECKED]] for what was not.
 
-orgfs spreads a file over the machines of a group. It cuts the file into a
-fixed number of byte slices (/stripes/), writes each slice to more than one
-machine, and puts the file back together on request, checking a SHA-256 for every
-slice and for the whole. The group, the stripe count and the number of copies come
-from one Org file, the /declaration/, which every machine holds identically. No
-machine is in charge: each one reads the same file and works out the same plan.
+* What you get
 
-It is written in POSIX =sh= and =awk=, because a target host may have no Python, no
-Node and no package manager. Tests are written in Python 3 (standard library only),
-a different language from the tool, on purpose.
+You can spread a file over the machines of a group, lose one, and still get the file
+back, with every slice and the whole checked against a SHA-256. You can also give a
+machine a /view/ of the group's storage in which nothing is silently left out: where
+the view omits something it writes a /gap record/ that says what is missing (by kind
+and shape, never content), how and why it was left out, which line of the declaration
+states the rule, who could reach it, and the command that would fill it. A host
+can ask for a collection at any grain it can reach (one object, one spoke, all
+spokes) and gets gap records for the rest.
 
-* Why
+The group, the stripe count and the number of copies come from one Org file, the
+/declaration/, which every machine holds identically. No machine is in charge.
 
-Two words are this project's own: SPOKE and OBFISCATE (spelled as the project
-spells it). orgfs is a small demonstration of both, beside the plain sshfs mounts
-that already exist.
+orgfs is POSIX =sh= and =awk= (a target host may have no Python, no Node, no package
+manager). Its tests are Python 3, standard library only: a different language from the
+tool, on purpose.
 
-- A *spoke* is storage one host lends to others. On gw12, =/spokes/gw14/storage=,
-  =/spokes/gw14/data= and =/spokes/gw16/storage= are sshfs mounts of other hosts'
-  storage. That is a spoke the plain way: the whole tree, one host at a time.
-- orgfs is a spoke the other way: a registry spread "in hunks as slices across the
-  bytes", so that no one member holds all of it and any member can say what the
-  group agreed to.
+* What was asked
 
-The demonstration payload is the *licensing stack*: a small register of the free
-software this very project uses, with each licence stated and sourced, so a reader
-sees whose work is in use and on what terms. orgfs stores that register as its own
-first test and renders it as a site.
+Corwin Brust, 2026-11-06 (short quotes; the full text is kept with the project, not here).
+
+At 15:53, the original ask:
+
+#+BEGIN_QUOTE
+orgfs detail and demo project for it's own site and main build pipelines
+#+END_QUOTE
+
+At 18:08, on 0.1.0:
+
+#+BEGIN_QUOTE
+page is good in that it doesn't look like other things not as good in the particulars
+#+END_QUOTE
+
+#+BEGIN_QUOTE
+The prose is forward, assertive, declarative manual style: acceptable but doesn't show our forms or methods.
+#+END_QUOTE
+
+On one spoke per file ("I don't think so"):
+
+#+BEGIN_QUOTE
+a file materialized per host should contains double linkage to information it fetches rather than displays
+#+END_QUOTE
+
+#+BEGIN_QUOTE
+if we can scrub/redact/withold/drop some information we carry, then we can say how to do it and why each time, every time
+#+END_QUOTE
+
+#+BEGIN_QUOTE
+we should always be able to assemble a collection at whatever grain/cross-grain intersection or collection that a user can reach
+#+END_QUOTE
+
+On ROOT being one path for every member:
+
+#+BEGIN_QUOTE
+this is preferred, or at least "my thoughts exactly"
+#+END_QUOTE
+
+#+BEGIN_QUOTE
+/c4 seats the principle registry on the host, that /spokes seats each cross-mounting spoke
+#+END_QUOTE
+
+* What was observed
+
+Each line is a command and what it printed. Nothing here is a judgement.
+
+| Command                                                    | Printed (here, 2026-11-06)                                            |
+|------------------------------------------------------------+-----------------------------------------------------------------------|
+| =make check=                                               | =check: OK (104 tests in 4 modules)=; 36.8 s on a 2-core VM          |
+| =ORGFS_SHELL=S ORGFS_AWK=A python3 tests/run_all.py=       | the same line for S in {dash, bash, busybox sh} and A in {gawk, mawk} |
+| =PROVE_RED_RANGE=a:b python3 tests/prove_red.py= (6 ranges) | =(4 of 4=, =7 of 7=, =5 of 5=, =6 of 6=, =8 of 8=, =8 of 8 caught; control passed)= |
+| =sh bin/orgfs demo=                                        | 15 gap records in the visitor's view; no private or sealed path in it |
+| =sh bin/orgfs check examples/licensing.org --no-mounts=    | spoke identity =1df8d78c...e013=, the same as 0.1.0 printed for it    |
+| =sh bin/orgfs layout= (on the VM that built this)          | =layout: 0 held, 2 broken, 3 not checked= (the VM has no /c4, /spokes) |
+
+Versions: dash and bash 5.1.16 and busybox 1.30.1 (Ubuntu), gawk 5.1.0, mawk 1.3.4 20200120.
+The six prove-red ranges together cover all 38 planted faults; the single run that
+prints =PROVE-RED OK (38 of 38 caught; control passed)= takes longer than one call here
+and was not run as one.
+
+* What was judged
+
+Each is a choice with its reason, or a concern with what would show it wrong.
+
+- *Choice: several spokes per file; each spoke has an identity and so does the file.*
+  Reason: Corwin rejected one spoke per file. A question to orgfs always names its spoke
+  (=--spoke S=, or the file has only one), so no rule outside the file is needed to say
+  which spoke a host is asked about. The file's identity is the SHA-256 of the spokes'
+  identities, sorted, so it cannot depend on the order of the spokes.
+  Would be wrong if two hosts holding the same file ever get different identities for it;
+  =tests/test_views.py= shuffles the spokes and the members and compares against a second
+  implementation of the rule.
+- *Choice: a member heading belongs to the nearest spoke heading above it.* A level-1
+  heading that is not a spoke ends that scope, and a member outside a spoke is an
+  error. Would be wrong if prose headings turn out to be common between a spoke and its
+  members; the error would then be loud, not silent.
+- *Choice: one rule of access per visibility.* A member of a spoke sees all of it. A
+  non-member sees a public spoke in full (reading through the members' roots), a private
+  spoke without its ROOT paths or its store, and a sealed spoke only as a name. Would be
+  wrong if a reader who is not a member needs a private spoke's roots to do their work; the
+  gap record names who to ask.
+- *Choice: a view carries manifest rows, never slice bytes, and every slice has a gap
+  record.* Reason: then "no withholding without a gap record" has no exception. Would be wrong
+  if the slice gaps bury the others in practice; the demo page lists them all so you can see.
+- *Choice: the source side keeps a record in =MATERIALIZED=,* one line per view
+  (=view-id host kind file-identity spoke object=), idempotent: the same view writes the
+  same line once. Reason: either end can then be followed to the other (=orgfs trace=).
+  Would be wrong if a store is read-only to the hosts that read it; the view then says so in a
+  =backlink= gap and has no back-link, rather than claiming one.
+- *Choice: ROOT is one path on every member.* Corwin's preference. Reason: nothing
+  host-specific is written into the declaration. Would be wrong if a host cannot mount
+  another's storage at the same path.
+- *Choice: =orgfs layout= accepts a /c4 owned by root, or belonging to the group that is the
+  primary group of the =c4= account or of the account named after the host.* Corwin's wording
+  was "belongs to root (or the same user that is the group owner of a c4 account or of an
+  account matching the name of the host...)". Reason for my reading: it is the one that can
+  be checked from =/etc/passwd= alone. Would be wrong if he meant the /user/ owner must be
+  root or that account; =tests/test_layout.py= would then need the group clause removed.
+- *Concern: =--as HOST= is a claim, not a login.* orgfs has no authentication; anyone who can
+  run it can say they are any member. Would be wrong (a non-issue) if every machine that can
+  run orgfs is already trusted to be any member of the spokes it can mount.
+- *Concern: the declaration's prose is not carried into a view.* The parser ignores it, so the
+  tool does not hold it to withhold it. Would be wrong if prose in a declaration is ever meant
+  to be part of what a host is told.
+- *Concern: a gap says who could reach what is withheld, so it tells a reader which hosts
+  matter.* For a private spoke that is the member list, which that spoke already shows. For a
+  sealed spoke the names are withheld too ("members of spoke S (names withheld: sealed)").
+  Would be wrong if even the number of members of a sealed spoke is sensitive; the shape
+  currently says "N members".
 
 * The declaration
 
-A declaration is an Org file. Only headings of two kinds and their property drawers
-count; everything else is prose, which the tool ignores and which cannot change
-the spoke's identity.
+An Org file. Only headings of two kinds and their property drawers count; everything else
+is prose, which the tool ignores and which cannot change an identity.
 
 #+BEGIN_SRC org
 ,* spoke licensing
@@ -58,50 +161,121 @@ the spoke's identity.
 :ROOT: /spokes/gw12/storage
 :TRANSPORT: local
 :END:
+
+,* spoke ring-notes
+:PROPERTIES:
+:RING: GRAIN
+:STRIPES: 3
+:REPLICAS: 2
+:VISIBILITY: private
+:END:
+
+,** member gw12
+:PROPERTIES:
+:ROOT: /spokes/gw12/private
+:TRANSPORT: local
+:END:
 #+END_SRC
 
-(The full example is =examples/licensing.org=. Its paths are illustrative.)
+(=examples/licensing.org= is a full single-spoke example; its paths are illustrative.)
 
-| Property     | On     | Meaning                                                                 |
-|--------------+--------+-------------------------------------------------------------------------|
-| =RING=       | spoke  | GRAIN, GREAT or GRAND. A label for now; it changes no behaviour.        |
-| =STRIPES=    | spoke  | Integer 1..256: how many byte slices a file is cut into.                |
-| =REPLICAS=   | spoke  | Integer 1..members: how many members hold each slice.                   |
-| =VISIBILITY= | spoke  | public, private or sealed (see below).                                  |
-| =ROOT=       | member | Absolute path, no whitespace, the same on every host that uses it.      |
+| Property     | On     | Meaning                                                                  |
+|--------------+--------+--------------------------------------------------------------------------|
+| =RING=       | spoke  | GRAIN, GREAT or GRAND. A label for now; it changes no behaviour.         |
+| =STRIPES=    | spoke  | Integer 1..256: how many byte slices a file is cut into.                 |
+| =REPLICAS=   | spoke  | Integer 1..members: how many members hold each slice.                    |
+| =VISIBILITY= | spoke  | public, private or sealed (see the access table below).                  |
+| =ROOT=       | member | Absolute path, no whitespace, the same on every host that uses it.       |
 | =TRANSPORT=  | member | =local= or =sshfs=. For sshfs, =check= requires ROOT to be a mount point. |
 
 Rules the tool enforces:
 
-- Exactly one =* spoke NAME= heading (name: =[a-z0-9][a-z0-9_-]*=), and one
-  =** member HOST= heading per member. Other headings are prose.
+- One or more =* spoke NAME= headings (name: =[a-z0-9][a-z0-9_-]*=, unique in the file), each
+  followed by its =** member HOST= headings. A member heading outside a spoke is an error.
 - Every property above is required; unknown or duplicate properties are errors.
-- *Identity.* The spoke's identity is the SHA-256 of ="orgfs-decl-1\n"= followed by
-  the normalized property lines, sorted bytewise. Normalizing lower-cases or
-  upper-cases the keyword values, strips trailing slashes from ROOT, and drops
-  prose and member order. Members agree only if identities match (=orgfs agree=).
-- *Plan.* For each stripe =i= every member scores =sha256("SPOKE|i|HOST")=; the
-  =REPLICAS= highest scores hold stripe =i= (rendezvous hashing). The rule uses
-  nothing but the declaration, so every host computes the same table. Adding or
-  removing a member moves only the stripes that member wins or loses.
-- *Visibility.* =public=: the site shows ROOT paths and carries the declaration.
-  =private=: the site hides ROOT paths and omits the declaration file. =sealed=:
-  would mean encrypted; orgfs has no encryption, so =put= and =site= refuse it
-  rather than pretend.
+- *Spoke identity.* The SHA-256 of ="orgfs-decl-1\n"= followed by the spoke's normalized
+  property lines, sorted bytewise. Normalizing upper- or lower-cases the keyword values,
+  strips trailing slashes from ROOT, and drops prose and member order. A 0.1.0 single-spoke
+  file keeps the identity it had.
+- *File identity.* The SHA-256 of ="orgfs-file-1\n"= followed by the spoke identities, sorted,
+  one per line. =orgfs agree= compares file identities (or one spoke's, with =--spoke=).
+- *Plan.* For each stripe =i= every member of a spoke scores =sha256("SPOKE|i|HOST")=; the
+  =REPLICAS= highest scores hold stripe =i= (rendezvous hashing). The rule uses nothing but
+  the declaration, so every host computes the same table.
 
-** Why this shape
+** Access, by visibility
 
-I kept the suggested shape, with two choices argued here.
+| VISIBILITY | A member of the spoke sees | A non-member sees                                                      |
+|------------+----------------------------+------------------------------------------------------------------------|
+| public     | everything                 | everything, reading through the members' ROOT paths                    |
+| private    | everything                 | the spoke's properties and member names; ROOT paths and store are gaps |
+| sealed     | everything                 | the spoke's name; the rest is one gap record                           |
 
-1. One spoke per file. A file that declares several spokes would need a rule for
-   which one a host is asked about, and that rule would not be in the file. One
-   file, one identity.
-2. ROOT is a path as every member sees it. A host reaches another member's storage
-   through its sshfs mount, and the declaration is the same on every host, so the
-   mount must sit at the same path on all of them (a bind mount or a symlink on the
-   owning host does it). The cost is a little tidiness on each host; the gain is
-   that nothing host-specific is written anywhere, which keeps "every host holds
-   the file identically" true.
+=put= still refuses a sealed spoke: sealed would mean encrypted and orgfs has no encryption.
+
+* Views and gaps
+
+=orgfs materialize DECL --as HOST= writes the view HOST may have of the declaration, as Org
+on stdout (or =--out FILE=). =orgfs assemble DECL --as HOST --into DIR= does the same and also
+gathers the bytes HOST may reach into =DIR/SPOKE/OBJECT=. Both take =--spoke S= and
+=--object ID= for the grain (=--object= needs =--spoke= when the file holds several), and
+put a gap record in place of everything outside the grain or outside HOST's reach.
+
+** What a fetched item says
+
+Anything the view fetches rather than displays (an object, a slice) is a heading with
+=ROLE: fetched= and the properties =SOURCE_SPOKE=, =SOURCE_OBJECT=, =SOURCE_MEMBER=,
+=SOURCE_PATH= (and =SOURCE_SLICE= for a slice). An object also has =BACKLINK=: the
+=MATERIALIZED= file on the source side that lists this view. The last line of a view is
+=# view-id: SHA-256 of everything above it=. =orgfs trace VIEW= follows each backlink and
+checks that the source lists that view-id for that host; =orgfs trace DECL --object ID=
+goes the other way and lists the views a store has recorded.
+
+** What a gap record says
+
+Each gap is a heading =gap ID= with these properties, all required (a view with an
+incomplete gap is refused when it is made, and =orgfs routes= refuses one it is given):
+
+| Property     | Says                                                                                   |
+|--------------+----------------------------------------------------------------------------------------|
+| =GAP_ID=     | =SPOKE/kind/name=, stable across runs                                                  |
+| =WHAT_KIND=  | what sort of thing is missing                                                          |
+| =WHAT_SHAPE= | its shape, never its content ("1 absolute path, 4 components")                         |
+| =RULE=       | the rule that left it out                                                              |
+| =RULE_AT=    | =line N (:KEY:)= of the declaration that states the rule, or =not in the declaration:= and where it is stated |
+| =HOW=        | what the tool did                                                                      |
+| =WHY=        | why                                                                                    |
+| =REACH=      | who could reach it                                                                     |
+| =ROUTE=      | one or more commands that would fill it (repeated)                                     |
+
+Kinds: =member-root= (a private spoke's ROOT, withheld from a non-member), =objects= (a
+private spoke's store, not read for a non-member), =spoke= (a sealed spoke; or any spoke
+outside the grain asked for), =object= (outside the object grain), =slice-bytes= (a view
+carries no bytes; for a slice the host does not hold, the plan rule is cited too),
+=member-store= (a member's root is not reachable from where the view was made), =manifest=
+(none, or members disagree), =backlink= (the source's store is not writable from here).
+
+=orgfs routes VIEW= reads only the view: it lists every gap with its rule, line, reach and
+routes, so a reader who has nothing but the gap records can see what to run. The routes are
+written =orgfs assemble DECL --as M ...= with =DECL=, =DIR= and (for a sealed spoke) =MEMBER=
+left for the reader to fill in.
+
+* The layout of a host
+
+=orgfs layout [--root PREFIX] [--decl DECL]= checks, on the host it runs on, the layout
+Corwin fixes per system build. Each rule prints as =held=, =broken= or =not checked=; the exit
+status is 1 if any is broken. =--root= points it at another tree (the tests use a fake one).
+
+| Rule             | Held when                                                                       |
+|------------------+---------------------------------------------------------------------------------|
+| =c4-present=     | =/c4= is a directory (it seats the host's principal registry)                   |
+| =spokes-present= | =/spokes= is a directory (it seats every cross-mounted spoke)                   |
+| =c4-owner=       | =/c4= is owned by root, or belongs to the primary group of account =c4= or of the account named after the host |
+| =etc-c4-owner=   | the same for =/etc/c4=, where it exists (else not checked)                      |
+| =spokes-roots=   | with =--decl=: every sshfs member's ROOT is under =/spokes/= (else not checked) |
+
+The host name comes from =ORGFS_HOSTNAME=, =etc/hostname= or =hostname=, cut at the first dot. A container we host may keep its own identifier (on ours it is =orgfs=): the account named after the host is then the account of that name, and a name that follows no =gwNN= pattern is reported on the first line as information, never as a fault.
+Accounts are read from =etc/passwd= under the root; nothing else (LDAP, NSS) is consulted.
 
 * On-disk layout
 
@@ -109,112 +283,101 @@ I kept the suggested shape, with two choices argued here.
 ROOT/.orgfs/SPOKE/<sha256-of-whole-file>/
     1.of.5   2.of.5 ...      the slices this member holds (per the plan)
     MANIFEST                 on every member: slice<TAB>size<TAB>sha256, one line per slice
+    MATERIALIZED             views that fetched from here: view-id, host, kind, file-id, spoke, object
 #+END_EXAMPLE
 
-Slices are =ceil(size/STRIPES)= bytes each; the last ones may be short or empty.
-The object's name is the SHA-256 of the whole file.
+Slices are =ceil(size/STRIPES)= bytes each; the last ones may be short or empty. The object's
+name is the SHA-256 of the whole file.
 
 * Commands
 
-| Command                        | Does                                                          |
-|--------------------------------+---------------------------------------------------------------|
-| =orgfs check DECL [--no-mounts]= | parse, sanity-check, verify roots; print the identity       |
-| =orgfs plan DECL [--as HOST]=  | stripe -> holders; with =--as=, only the stripes HOST holds    |
-| =orgfs agree DECL OTHER...=    | refuse unless every identity is the same                       |
-| =orgfs put DECL FILE=          | cut, write slices and manifests; print the object ID           |
-| =orgfs get DECL ID OUT=        | reassemble, verifying each slice and then the whole            |
-| =orgfs verify DECL=            | every slice good on REPLICAS planned members, whole hash right |
-| =orgfs site DECL OUT=          | static HTML site: no script, no inline style, one CSS file     |
-| =orgfs demo [DIR]=             | the licensing demo over five local directories                 |
+| Command                                                | Does                                                      |
+|--------------------------------------------------------+-----------------------------------------------------------|
+| =orgfs check DECL [--spoke S] [--no-mounts]=           | parse, sanity-check, verify roots; print identities       |
+| =orgfs plan DECL [--spoke S] [--as HOST]=              | stripe -> holders; with =--as=, only the stripes HOST holds |
+| =orgfs agree DECL OTHER... [--spoke S]=                | refuse unless every identity is the same                  |
+| =orgfs put DECL FILE [--spoke S]=                      | cut, write slices and manifests; print the object ID      |
+| =orgfs get DECL ID OUT [--spoke S]=                    | reassemble, verifying each slice and then the whole       |
+| =orgfs verify DECL [--spoke S]=                        | every slice good on REPLICAS planned members, whole hash right |
+| =orgfs materialize DECL --as HOST [grain] [--out FILE]= | the view HOST may have, gaps included                    |
+| =orgfs assemble DECL --as HOST --into DIR [grain]=     | the collection HOST may reach, bytes included, gaps for the rest |
+| =orgfs routes VIEW=                                    | every gap in a view with its routes                       |
+| =orgfs trace VIEW=, =orgfs trace DECL --object ID=      | follow a view to its sources, or an object to its views   |
+| =orgfs layout [--root PREFIX] [--decl DECL]=           | check the host's fixed layout                             |
+| =orgfs site DECL OUT=                                  | static HTML site: no script, no inline style, one CSS file |
+| =orgfs demo [DIR]=                                     | three spokes over local directories, end to end           |
 
-Behaviour worth knowing:
-
-- =put= needs every member usable, and refuses an sshfs root that is not a mounted
-  mount point (an unmounted sshfs directory is just a local directory, and writing
-  to it would put the slice on the wrong disk).
-- =get= and =verify= tolerate unreachable members. =get= warns loudly
-  (=CORRUPT slice ...=) about any copy that does not match the manifest, uses a good
-  copy, and fails if no good copy exists or the reassembled bytes do not hash to
-  the ID. =verify= is stricter: every planned holder must have a good copy.
+=put= needs every member of the spoke usable and refuses an sshfs root that is not a mounted
+mount point (an unmounted sshfs directory is just a local directory). =get= and =verify=
+tolerate unreachable members; =get= warns loudly (=CORRUPT slice ...=) about any copy that
+does not match the manifest and fails if no good copy exists or the bytes do not hash to the ID.
 
 * Quick start
 
 #+BEGIN_SRC sh
-make check          # tests, in Python, driving bin/orgfs as a black box
-make prove-red      # plant faults on a copy; each must turn a test red
-make demo           # five local directories stand in for five hosts
+make check          # four test modules at once, in Python, driving bin/orgfs as a black box
+make prove-red      # plant faults on a copy; each must turn a test red (long)
+make demo           # three spokes (public, private, sealed) over local directories
 make site           # writes _site/
-sh bin/orgfs check examples/licensing.org --no-mounts
+sh bin/orgfs layout # does this host have /c4 and /spokes the way the build fixes them
 #+END_SRC
 
-Shells and awks: =make check-shells= repeats the suite under dash, bash and
-busybox ash with gawk and mawk (slow). Or by hand:
-=ORGFS_SHELL=dash ORGFS_AWK=mawk python3 tests/test_orgfs.py=.
-
-** The demo
-
-=orgfs demo= writes a throwaway declaration =licensing= (5 stripes, 2 replicas)
-over five local directories, stores two files in it (=share/licensing.tsv=, a
-four-column register of name, licence, source, why-we-use-it, and the same
-register rendered as text), gets both back, checks the bytes, verifies, then moves
-one member's data aside to show =get= still works and =verify= reports the lost
-redundancy.
+Shells and awks: =make check-shells= repeats the suite under dash, bash and busybox sh with
+gawk and mawk (slow). Or by hand: =ORGFS_SHELL=dash ORGFS_AWK=mawk python3 tests/run_all.py=.
 
 ** The site
 
-=orgfs site= renders =index.html= (what orgfs is, the declaration, the plan table),
-=licensing.html= (the register), =rights.html= (Your rights on this site), and
-=orgfs.css=. There is no JavaScript, no inline script, no =style= attribute, and
-nothing is loaded from another host. =rights.html= says that the site keeps no
-access log, sets no cookies and loads nothing from another host. The first two are
-about how the server is run; configure the server to match, because the tool
-cannot make them true.
+=orgfs site= renders =index.html= (what orgfs is, the declaration, one members table and plan
+table per spoke), =gaps.html= (a demo view for a visitor host, every gap in a table, one gap and
+one fetched item in full), =licensing.html= (the register), =rights.html= (Your rights on this
+site), =orgfs.css= and =view-visitor.org=. A private spoke's roots and a sealed spoke's
+members are not on the site; they are gap records there too. There is no JavaScript, no
+inline script, no =style= attribute, and nothing is loaded from another host; the CSP meta
+tag says so. The look: a modular type scale, a 66-character measure, one spacing unit,
+tables with captions and banding, a visible focus ring, WCAG AA contrast in light and
+dark (computed by the tests), and a print stylesheet. =rights.html= says the site keeps no
+access log, sets no cookies and loads nothing from another host; the first is about how the
+server is run, so configure the server to match.
 
 * Tests
 
-=tests/test_orgfs.py= (Python 3, standard library only) drives =bin/orgfs= as a
-black box. It computes the rendezvous plan again, independently, so the tool's
-hashing is checked against a second implementation of the rule above.
-=tests/prove_red.py= (=make prove-red=) plants faults in a copy of the tool and
-requires each to turn a test red; it ends =PROVE-RED OK (N of N caught; control
-passed)=. When something gets past the tests, add a test and a planted fault.
+=tests/run_all.py= runs the four modules at once. =test_orgfs.py= (declaration, plan, store, site)
+computes the rendezvous plan again, independently, so the tool's hashing is checked against a
+second implementation. =test_views.py= works out which gap records each host must be shown and
+which strings it must never see, from the rules above, and runs every route in a gap to check
+it fills that gap. =test_layout.py= builds a fake tree. =test_style.py= computes the contrast
+ratios from the CSS.
+
+=tests/prove_red.py= (=make prove-red=) plants faults in a copy of the tool and requires each to
+turn a test red; it ends =PROVE-RED OK (N of N caught; control passed)=. Set
+=PROVE_RED_RANGE=a:b= to run a slice of the faults (a partial run never prints the OK line). When
+something gets past the tests, add a test and a planted fault.
 
 * CI
 
-=.github/workflows/ci.yml= runs on a push to main and on manual dispatch only. The
-repository is public and the runner is self-hosted, so a pull request from a fork
-must never run on it. On main, if =/srv/orgfs/site= exists and is writable, the job
-syncs =_site/= into it.
+=.github/workflows/ci.yml= runs on a push to main and on manual dispatch only. The repository
+is public and the runner is self-hosted, so a pull request from a fork must never run on it.
+On main, if =/srv/orgfs/site= exists and is writable, the job syncs =_site/= into it.
 
-* Honest limits
+* NOT CHECKED
 
-- *Replication only.* No parity, no erasure coding: REPLICAS = 2 survives the loss
-  of one holder per stripe, no more, at twice the storage.
-- *No confidentiality.* Slicing a file spreads it; it does not hide it. Anyone who
-  can read enough members can reassemble. Nothing is encrypted. =sealed= is refused.
-- *Transports:* =local= and =sshfs= only. There is no network code in orgfs; sshfs
-  mounts are made by you.
-- *No repair, no rebalancing, no delete, no listing.* =verify= tells you what is
-  wrong; fixing it is by hand for now. Changing the declaration changes the plan,
-  and data already stored is not moved.
-- *Size.* A slice is read with one =dd= block, so a slice over 2 GB is refused,
-  and memory use grows with slice size.
-- *Mount detection* reads =/proc/mounts= (override: =ORGFS_MOUNTS=); it checks that
-  ROOT is a mount point, not that it is an sshfs mount, and it does not unescape
-  paths (ROOT may not contain whitespace).
-- *Concurrency:* two writers to one spoke at once are not coordinated.
-- *Trust:* hashes catch damage and mix-ups, not a member who rewrites a slice and
-  the manifest on every member together; =get= still catches that through the
-  whole-file hash only when the object name (the ID) came from somewhere you trust.
-- Portability was exercised on Linux only.
-
-* Licences
-
-The code is GPL-3.0-or-later; =COPYING= is the GPL v3 text as shipped by Debian in
-=/usr/share/common-licenses/GPL-3=. Prose is CC-BY-SA-4.0. The register in
-=share/licensing.tsv= states the licence of each program the project uses. Where
-the licence could be read from a Debian =copyright= file on the machine this was
-written on (dash, gawk, mawk, make, git, OpenSSH), that is what it says; the
-others are stated from the project's own known licence, and anything not confirmed
-is marked =unchecked= rather than guessed. The source URLs in the register were not
-fetched when it was written.
+- Anything on a ghostwheel host. Hosts in the tests are local directories; no real sshfs mount
+  was made, and mount detection reads =/proc/mounts= (override: =ORGFS_MOUNTS=).
+- The /root-owned/ clause of =orgfs layout= was only exercised if the tests ran as root; as a
+  normal user they exercise the group clauses and the broken case. LDAP and other account
+  sources were not tried.
+- The single run of =make prove-red= to its =PROVE-RED OK (38 of 38 ...)= line. It was run in six
+  ranges, each ending with every fault in it caught and the control passed.
+- busybox's own awk (only gawk and mawk were tried), macOS and BSD (=ls -ldn=, =sha256sum=), and
+  any shell other than dash, bash 5.1 and busybox 1.30 ash.
+- How the site looks in a browser or on paper: the contrast ratios and the presence of the
+  focus, measure and print rules are tested; nobody looked at the pages rendered.
+- That the withholding rules (what a non-member of a private or sealed spoke is shown) are the
+  ones Corwin wants for real spokes; they are one reading of his words.
+- The rest of the 0.1.0 limits, unchanged: replication only (no parity); no confidentiality
+  (slicing spreads a file, it does not hide it); no repair, rebalancing, delete or listing; a
+  slice over 2 GB is refused; two writers to one spoke are not coordinated; hashes catch damage
+  and mix-ups, not a member who rewrites a slice and the manifest on every member together.
+- Licences: the register in =share/licensing.tsv= marks sshfs and Proxmox VE =unchecked=; its
+  source URLs were not fetched when it was written. =COPYING= is the GPL v3 text as shipped by
+  Debian in =/usr/share/common-licenses/GPL-3=.
