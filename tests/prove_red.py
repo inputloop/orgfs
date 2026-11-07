@@ -104,6 +104,9 @@ FAULTS = [
      'a:focus-visible, .scroll:focus-visible, pre:focus-visible { outline: none; }'),
     ("the print stylesheet leaves the navigation in",
      '  nav, .skip { display: none; }\n', '  .skip { display: none; }\n'),
+    ("each element gets its own width again (a ch measure per child)",
+     '  margin: 0 auto; max-width: var(--measure); padding: 0 1.25rem 4rem;\n}\n',
+     '  margin: 0 auto; max-width: 60rem; padding: 0 1.25rem 4rem;\n}\nmain > * { max-width: 66ch; }\n'),
     ("the demo page lists fewer gaps than the view holds",
      '$AWK -v mode=tsv "$GAPS_AWK" "$_w/visitor.org" |', '$AWK -v mode=tsv "$GAPS_AWK" "$_w/visitor.org" | head -n 3 |'),
 ]

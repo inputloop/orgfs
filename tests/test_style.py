@@ -89,9 +89,14 @@ class StyleTests(unittest.TestCase):
         self.assertIn(".skip:focus", self.css)
 
     def test_line_length_scale_and_rhythm(self):
-        ch = int(re.search(r"--measure:\s*(\d+)ch", self.css).group(1))
-        self.assertTrue(45 <= ch <= 80, ch)
-        self.assertIn("max-width: var(--measure)", self.css)
+        # One width, set once in rem on body (about 66 body-font characters). A ch width on an
+        # element is measured in that element's own font, so it gave every element its own edge.
+        rem = float(re.search(r"--measure:\s*([0-9.]+)rem", self.css).group(1))
+        self.assertTrue(30 <= rem <= 42, rem)
+        body = re.search(r"\nbody \{([^}]*)\}", self.css).group(1)
+        self.assertIn("max-width: var(--measure)", body)
+        self.assertIsNone(re.search(r"max-width:\s*[0-9.]+ch|--measure:\s*[0-9.]+ch", self.css))
+        self.assertNotIn("main > *", self.css)
         steps = re.findall(r"--s(-?\d+):\s*([0-9.]+)rem", self.css)
         self.assertGreaterEqual(len(steps), 5)
         vals = [float(v) for _, v in sorted(steps, key=lambda x: int(x[0]))]

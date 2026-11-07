@@ -952,7 +952,10 @@ write_css() {
   color-scheme: light dark;
   --bg: #ffffff; --fg: #111111; --mut: #4a4a4a; --link: #0b3d91; --visited: #5b2a86;
   --rule: #6b6b6b; --band: #f0f0f0;
-  --measure: 66ch; --sp: 1.6rem;
+  /* One width for the whole page: about 66 characters of the body font (ch is the width of "0",
+     about .55em in a system sans, so 66ch is near 36rem). Set in rem, once, on body: a ch value on
+     each element would be measured in that element's own font and give every element its own edge. */
+  --measure: 36rem; --sp: 1.6rem;
   --s-1: 0.875rem; --s0: 1rem; --s1: 1.2rem; --s2: 1.44rem; --s3: 1.728rem; --s4: 2.074rem;
 }
 @media (prefers-color-scheme: dark) {
@@ -962,10 +965,8 @@ html { font-size: 100%; -webkit-text-size-adjust: 100%; }
 body {
   background: var(--bg); color: var(--fg);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: var(--s0); line-height: 1.6;
-  margin: 0 auto; max-width: 60rem; padding: 0 1.25rem 4rem;
+  margin: 0 auto; max-width: var(--measure); padding: 0 1.25rem 4rem;
 }
-main > * { max-width: var(--measure); }
-main > .scroll, main > .wide { max-width: none; }
 p, ul, ol, dl, blockquote, pre { margin: 0 0 var(--sp); }
 li { margin: 0 0 .4rem; }
 a { color: var(--link); text-underline-offset: .15em; }
@@ -1015,7 +1016,6 @@ footer { border-top: 2px solid var(--rule); margin-top: calc(var(--sp) * 2); pad
   :root { --bg: #ffffff; --fg: #000000; --mut: #000000; --link: #000000; --visited: #000000; --rule: #000000; --band: #ffffff; }
   body { font-size: 11pt; line-height: 1.4; max-width: none; padding: 0; }
   nav, .skip { display: none; }
-  main > * { max-width: none; }
   a { text-decoration: underline; }
   a[href^="https:"]::after { content: " (" attr(href) ")"; font-size: .85em; overflow-wrap: anywhere; }
   pre { white-space: pre-wrap; overflow: visible; border: 1px solid #000000; }
@@ -1149,7 +1149,7 @@ cmd_site() {
     html_head "About" index
     cat <<EOF
 <h1>orgfs</h1>
-<p class="status">Status: orgfs $VERSION, before 1.0. Linux only. Built by <code>orgfs site</code> from a declaration of $NSP $_nplural, file identity <code>$FILEID</code>. Nothing on this page says the tests passed; run <code>make check</code>.</p>
+<p class="status">Status: orgfs $VERSION, before 1.0. Tested on Linux (dash, bash, busybox sh; gawk, mawk); Windows, macOS and the BSDs not yet tested. Built by <code>orgfs site</code> from a declaration of $NSP $_nplural, file identity <code>$FILEID</code>. Nothing on this page says the tests passed; run <code>make check</code>.</p>
 
 <h2>What you get</h2>
 <p>You can spread a file over a group of machines and lose one without losing the

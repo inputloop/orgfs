@@ -7,7 +7,7 @@
 Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors.
 Code: GPL-3.0-or-later (see =COPYING=). Prose, including this file: CC-BY-SA-4.0.
 
-*Status:* orgfs 0.2.0, 2026-11-06, before 1.0. Linux only. 104 tests passed here
+*Status:* orgfs 0.2.0, 2026-11-06, before 1.0. Tested on Linux only; Windows, macOS and the BSDs are not yet tested. 104 tests passed here
 (=make check=) under dash, bash and busybox sh, each with gawk and mawk. 38 planted
 faults were each caught. Nothing has run on a ghostwheel host yet. See
 [[*What was observed][What was observed]] for the commands and [[*NOT CHECKED][NOT CHECKED]] for what was not.
