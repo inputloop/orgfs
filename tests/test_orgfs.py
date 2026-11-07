@@ -16,6 +16,7 @@ import hashlib
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -106,6 +107,20 @@ class Base(unittest.TestCase):
 
     def holders(self, i, stripes=5, replicas=2):
         return ref_plan("t", self.hosts, stripes, replicas)[i]
+
+
+class ReadOnlySourceTests(unittest.TestCase):
+    def test_atoms_that_are_read_only_still_compose_twice(self):
+        # a checkout or a staged copy may hold read-only files; story_of copies story.org to a work
+        # file that site and compose both write, and a plain cp onto a read-only copy fails
+        with tempfile.TemporaryDirectory() as td:
+            src = os.path.join(td, "licensing.d")
+            shutil.copytree(os.path.join(ROOT_DIR, "examples", "licensing.d"), src)
+            for dp, dn, fn in os.walk(src):
+                for f in fn:
+                    os.chmod(os.path.join(dp, f), 0o444)
+            rc, out, err = orgfs("site", src, os.path.join(td, "site"))
+            self.assertEqual(rc, 0, err)
 
 
 class CheckTests(Base):
@@ -599,7 +614,7 @@ class SiteTests(Base):
 
     def test_nav_has_made_in_its_place_and_marks_the_current_page(self):
         out = self.render()
-        order = ["About", "The declaration", "How this was made", "A view with its gaps", "Licensing stack", "Your rights on this site"]
+        order = ["About", "The declaration", "How this was made", "Who worked on this", "A view with its gaps", "Licensing stack", "Your rights on this site"]
         pages = dict(self.pages(out))
         for n, html in pages.items():
             nav = re.search(r"<nav.*?</nav>", html, re.S).group(0)

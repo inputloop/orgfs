@@ -17,7 +17,7 @@ set -u
 LC_ALL=C
 export LC_ALL
 AWK=${ORGFS_AWK:-awk}
-VERSION=0.4.0
+VERSION=0.5.0-dev
 HERE=$(cd "$(dirname "$0")" && pwd)
 SHARE=${ORGFS_SHARE:-$HERE/../share}
 
@@ -75,6 +75,11 @@ usage: orgfs COMMAND ...
                              check the host's fixed layout (/c4, /spokes, owners)
   site DECL OUT              render a static, script-free HTML site into OUT
   demo [DIR]                 the demo over 5 local directories and 3 spokes
+  who REPO [PATH...] [--since DATE] [--until DATE] [--out FILE]
+                             who worked on a local git repository, over time: an Org document in
+                             which each contributor, path and commit links to the other two
+  stack DIR [--seed FILE]    the tools this build stands on, one atom each, with versions, packages
+                             and licences as read here; --seed starts from an earlier composed stack
   version
 USAGE
 }
@@ -417,7 +422,7 @@ END {
   if (prevatom != "") atom_end(prevatom)
   if (natoms > 0 && outsideh > 0) endfail("a composed file declares only through its atoms, but " outsideh " spoke or member heading(s) stand outside any atom")
   if (bad) exit 1
-  if (nsp == 0) endfail("no \"* spoke NAME\" heading")
+  if (nsp == 0 && !(prose_ok + 0)) endfail("no \"* spoke NAME\" heading")
   split("RING STRIPES REPLICAS VISIBILITY", req, " ")
   for (si = 1; si <= nsp; si++) {
     s = sorder[si]
@@ -475,7 +480,7 @@ END {
 '
 
 # options, filled in by main
-O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0; O_SOURCE=0
+O_SINCE=; O_UNTIL=; O_SEED=; O_REPO=; O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0; O_SOURCE=0
 
 spoke_norm() { # SPOKE -> its data rows in the 0.1.0 shape, sorted bytewise
   $AWK -F'\t' -v s="$1" '$1=="D"&&$2==s{ l=$3; for(i=4;i<=NF;i++) l=l "\t" $i; print l }' "$TMP/all" | sort
@@ -545,7 +550,7 @@ atoms_list() {
 # DIR OUT: the story of DIR (its story.org, or the default: every atom included in turn)
 story_of() {
   if [ -f "$1/story.org" ]; then
-    cp "$1/story.org" "$2"
+    cat "$1/story.org" > "$2"
   else
     atoms_list "$1" || return 1
     $AWK '{ if (NR > 1) print ""; printf "#+INCLUDE: \"%s\"\n", $0 }' "$TMP/atoms" > "$2"
@@ -608,7 +613,10 @@ compose_dir() {
     cp "$TMP/ebody" "$2" || return 1
     return 0
   fi
+  # a record with no spoke atom (the stack of tools, for one) is prose and properties; it has no spokes to name
+  PARSE_PROSE_OK=0; grep -q '/spoke\.org$' "$TMP/atoms" || PARSE_PROSE_OK=1
   parse_decl "$TMP/ebody" "$1"
+  PARSE_PROSE_OK=0
   {
     if [ "$3" = s ]; then
       $AWK -v pfx="${CD_PREFIX:-}" '/^#\+INCLUDE: "/ && pfx != "" { i = index($0, "\""); $0 = substr($0, 1, i) pfx "/" substr($0, i + 1) } { print }' "$TMP/story"
@@ -707,7 +715,7 @@ load() {
 # FILE NAME -> SPOKES NSP FILEID and the normalized rows of each spoke ($TMP/norm.SPOKE)
 parse_decl() {
   scan map "$1" > "$TMP/amap" || die "declaration rejected: $2"
-  $AWK -v decl="$2" -v map="$TMP/amap" "$ATOM_AWK$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $2"
+  $AWK -v decl="$2" -v map="$TMP/amap" -v prose_ok="${PARSE_PROSE_OK:-0}" "$ATOM_AWK$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $2"
   sort "$TMP/raw" > "$TMP/all"
   SPOKES=$($AWK -F'\t' '$1=="D"&&$3=="spoke"&&$4=="name"{print $2}' "$TMP/all")
   NSP=$(printf '%s\n' "$SPOKES" | wc -l | tr -d ' ')
@@ -1499,6 +1507,648 @@ NF != 4 { printf "orgfs: register line %d has %d fields, want 4\n", NR, NF > "/d
 END { exit bad ? 1 : 0 }
 '
 
+# ------------------------------------------------------------------ who
+# orgfs who REPO [PATH...] [--since DATE] [--until DATE]: "who worked on my stuff over time?"
+# Reads git log (local, no network), writes an Org document in which the contributor, the path and
+# the commit are each a target (a heading with :CUSTOM_ID:) and each links to the other two, both ways.
+# Identities are the author name and email exactly as the commits give them: never merged, never
+# normalised (no .mailmap).  Every identifier is made from the data (a commit's abbreviated hash, a
+# path or an identity with the bytes outside [A-Za-z0-9.-] written as _XX hex); none is invented.
+WHO_FMT='%x01%h%x1f%H%x1f%an%x1f%ae%x1f%ad%x1f%aI%x1f%s'
+
+WHO_PARSE_AWK='
+function init_ord(   i) { for (i = 1; i < 256; i++) ORD[sprintf("%c", i)] = i }
+BEGIN {
+  init_ord(); FS = "\037"; SOH = sprintf("%c", 1); n = 0; bad = 0
+}
+substr($0, 1, 1) == SOH {
+  n++; short[n] = substr($1, 2); full[n] = $2; pn[n] = $3; pe[n] = $4; ds[n] = $5; iso[n] = $6
+  subj = $7; for (k = 8; k <= NF; k++) subj = subj FS $k
+  subject[n] = subj; npath[n] = 0; cur = n; next
+}
+$0 == "" { next }
+{
+  if (cur == 0) next
+  if (index($0, "\t") > 0) { printf "orgfs: who: commit %s lists a path that holds a tab, which this tool does not carry: %s\n", short[cur], $0 > "/dev/stderr"; bad = 1; next }
+  npath[cur]++; P[cur, npath[cur]] = $0
+}
+END {
+  if (bad) exit 1
+  np = 0
+  for (s = 1; s <= n; s++) {
+    i = n - s + 1; key = pn[i] SUBSEP pe[i]
+    if (!(key in ord)) { np++; ord[key] = np; pname[np] = pn[i]; pemail[np] = pe[i]; pfirst[np] = ds[i]; pcnt[np] = 0 }
+    o = ord[key]; pcnt[o]++; plast[o] = ds[i]
+    printf "%d\t%s\t%s\t%d\t%s\t%s\t%s\n", s, short[i], full[i], o, ds[i], iso[i], subject[i] > cfile
+    for (k = 1; k <= npath[i]; k++) printf "%d\t%s\t%d\n", o, P[i, k], s > ffile
+  }
+  for (o = 1; o <= np; o++) printf "%d\t%s\t%s\t%s\t%s\t%d\n", o, pname[o], pemail[o], pfirst[o], plast[o], pcnt[o] > pfile
+  close(cfile); close(ffile); close(pfile)
+}
+'
+
+WHO_COMMON_AWK='
+function init_ord(   i) { for (i = 1; i < 256; i++) ORD[sprintf("%c", i)] = i }
+function enc(s,   i, c, o) {
+  o = ""
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    if (c ~ /^[A-Za-z0-9.-]$/) o = o c; else o = o sprintf("_%02x", ORD[c])
+  }
+  return o
+}
+function orgsafe(s,   i, c, d, o) {
+  o = ""
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1); d = substr(s, i + 1, 1); o = o c
+    if ((c == "[" && d == "[") || c == "]" || (c == "<" && d == "<") || (c == "{" && d == "{")) o = o ZW
+  }
+  return o
+}
+function load(   line, a, n, i, s, o, subj) {
+  nseq = 0; npers = 0; nf = 0
+  while ((getline line < cfile) > 0) {
+    n = split(line, a, "\t"); s = a[1] + 0; if (s > nseq) nseq = s
+    cshort[s] = a[2]; cfull[s] = a[3]; cord[s] = a[4] + 0; cdate[s] = a[5]; ciso[s] = a[6]
+    subj = a[7]; for (i = 8; i <= n; i++) subj = subj "\t" a[i]
+    csubj[s] = subj
+  }
+  close(cfile)
+  while ((getline line < pfile) > 0) {
+    split(line, a, "\t"); o = a[1] + 0; if (o > npers) npers = o
+    pname[o] = a[2]; pemail[o] = a[3]; pfirst[o] = a[4]; plast[o] = a[5]; pcnt[o] = a[6] + 0
+  }
+  close(pfile)
+  while ((getline line < ffile) > 0) { split(line, a, "\t"); nf++; fo[nf] = a[1] + 0; fp[nf] = a[2]; fs[nf] = a[3] + 0 }
+  close(ffile)
+}
+function pid(o) { return "person-" enc(pname[o] " <" pemail[o] ">") }
+function plabel(o) { return orgsafe(pname[o] " <" pemail[o] ">") }
+function pl(o) { return "[[#" pid(o) "][" plabel(o) "]]" }
+function cl(s) { return "[[#commit-" cshort[s] "][" cshort[s] "]]" }
+function xid(p) { return "path-" enc(p) }
+function xl(p) { return "[[#" xid(p) "][" orgsafe(p) "]]" }
+function nn(n, one, many) { return n == 1 ? "1 " one : n " " many }
+'
+
+# the Contributors section: F sorted by contributor, path, commit
+WHO_PEOPLE_AWK='
+BEGIN {
+  init_ord(); load()
+  for (i = 1; i <= nf; i++) { hasp[fs[i]] = 1; if (!(fo[i] in pstart)) pstart[fo[i]] = i; pend[fo[i]] = i }
+  for (s = 1; s <= nseq; s++) if (!(s in hasp)) { o = cord[s]; empt[o] = (o in empt) ? empt[o] ", " cl(s) : cl(s) }
+  print "* Contributors"
+  for (o = 1; o <= npers; o++) {
+    mp = 0; last = ""
+    if (o in pstart) for (i = pstart[o]; i <= pend[o]; i++) if (fp[i] != last || i == pstart[o]) { mp++; last = fp[i] }
+    printf "** %s\n:PROPERTIES:\n:CUSTOM_ID: %s\n:NAME: %s\n:EMAIL: %s\n:END:\n", plabel(o), pid(o), pname[o], pemail[o]
+    printf "Observed: %s by this contributor, the first on %s and the last on %s, touching %s.\n", nn(pcnt[o], "commit", "commits"), pfirst[o], plast[o], nn(mp, "path", "paths")
+    if (o in pstart) {
+      print ""
+      last = ""
+      for (i = pstart[o]; i <= pend[o]; i++) {
+        if (i == pstart[o] || fp[i] != last) { printf "- %s\n", xl(fp[i]); last = fp[i] }
+        printf "  - %s %s\n", cdate[fs[i]], cl(fs[i])
+      }
+    }
+    if (o in empt) printf "\nCommits of this contributor that list no path in this range (a merge or an empty commit): %s\n", empt[o]
+  }
+}
+'
+
+# the Paths section: F sorted by path, commit
+WHO_PATHS_AWK='
+function flush(   ) {
+  if (cur == "") return
+  printf "** %s\n:PROPERTIES:\n:CUSTOM_ID: %s\n:PATH: %s\n:END:\n", orgsafe(cur), xid(cur), cur
+  printf "Observed: touched by %s, by %s, the first on %s and the last on %s.\n\n", nn(ncm, "commit", "commits"), nn(nps, "contributor", "contributors"), mind, maxd
+  printf "%s", body
+}
+BEGIN {
+  init_ord(); load(); cur = ""; print "* Paths"
+  for (i = 1; i <= nf; i++) {
+    if (fp[i] != cur) { flush(); cur = fp[i]; body = ""; ncm = 0; nps = 0; mind = ""; maxd = ""; split("", seen) }
+    d = cdate[fs[i]]; ncm++
+    if (!(fo[i] in seen)) { seen[fo[i]] = 1; nps++ }
+    if (mind == "" || d < mind) mind = d
+    if (d > maxd) maxd = d
+    body = body sprintf("- %s %s by %s\n", d, cl(fs[i]), pl(fo[i]))
+  }
+  flush()
+}
+'
+
+# the Commits section: F sorted by commit, path
+WHO_COMMITS_AWK='
+BEGIN {
+  init_ord(); load()
+  for (i = 1; i <= nf; i++) { if (!(fs[i] in cstart)) cstart[fs[i]] = i; cend[fs[i]] = i }
+  print "* Commits"
+  for (s = 1; s <= nseq; s++) {
+    printf "** %s\n:PROPERTIES:\n:CUSTOM_ID: commit-%s\n:COMMIT: %s\n:AUTHOR_DATE: %s\n:END:\n", cshort[s], cshort[s], cfull[s], ciso[s]
+    printf "Subject: %s\n\n", orgsafe(csubj[s])
+    printf "- Author: %s\n- Date: %s\n", pl(cord[s]), cdate[s]
+    if (s in cstart) for (i = cstart[s]; i <= cend[s]; i++) printf "- Path: %s\n", xl(fp[i])
+    else print "- Path: none listed (a merge or an empty commit lists no path)"
+  }
+}
+'
+
+who_sentence_awk='BEGIN { FS = "\t" } { n++; if ($5 != "") { if (mn == "" || $5 < mn) mn = $5; if ($5 > mx) mx = $5 } } END { printf "%d\t%s\t%s\n", n, mn, mx }'
+
+# REPO LABEL OUT [PATH...]  (WHO_SINCE, WHO_UNTIL) -> OUT
+who_doc() {
+  wd_repo=$1; wd_label=$2; wd_out=$3; shift 3
+  command -v git >/dev/null 2>&1 || die "who: git is needed (and nothing else beyond sh and awk)"
+  wd_err=$(git -C "$wd_repo" rev-parse --git-dir 2>&1 >/dev/null) || die "who: $wd_label is not a git repository that git can read (git says: $wd_err)"
+  wd_ZW=$(printf '\342\200\213')
+  case ${WHO_SINCE:-} in -*) die "who: --since needs a date, not $WHO_SINCE";; esac
+  case ${WHO_UNTIL:-} in -*) die "who: --until needs a date, not $WHO_UNTIL";; esac
+  # a bare YYYY-MM-DD would mean that day at the current time of day (git's rule); say the whole day instead
+  case ${WHO_SINCE:-} in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) WHO_SINCE="$WHO_SINCE 00:00:00";; esac
+  case ${WHO_UNTIL:-} in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) WHO_UNTIL="$WHO_UNTIL 23:59:59";; esac
+  : > "$TMP/who.raw"
+  if git -C "$wd_repo" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    git -C "$wd_repo" -c core.quotepath=off -c log.showSignature=false -c log.mailmap=false -c color.ui=false \
+      log --no-color --no-renames --name-only --date=short --format="$WHO_FMT" \
+      ${WHO_SINCE:+"--since=$WHO_SINCE"} ${WHO_UNTIL:+"--until=$WHO_UNTIL"} -- "$@" > "$TMP/who.raw" \
+      || die "who: git log failed in $wd_label"
+    wd_head=$(git -C "$wd_repo" rev-parse --short HEAD 2>/dev/null)
+  else
+    wd_head=
+  fi
+  wd_shallow=$(git -C "$wd_repo" rev-parse --is-shallow-repository 2>/dev/null)
+  $AWK -v cfile="$TMP/who.c" -v ffile="$TMP/who.f0" -v pfile="$TMP/who.p" "$WHO_PARSE_AWK" "$TMP/who.raw" || die "who: could not read the log"
+  [ -f "$TMP/who.c" ] || { : > "$TMP/who.c"; : > "$TMP/who.f0"; : > "$TMP/who.p"; }
+  sort -t "$TAB" -k1,1n -k2,2 -k3,3n "$TMP/who.f0" > "$TMP/who.fp"
+  sort -t "$TAB" -k2,2 -k3,3n "$TMP/who.f0" > "$TMP/who.fx"
+  sort -t "$TAB" -k3,3n -k2,2 "$TMP/who.f0" > "$TMP/who.fc"
+  wd_cmd="git -C ${WHO_CMD_REPO:-$wd_label} -c core.quotepath=off -c log.showSignature=false -c log.mailmap=false -c color.ui=false log --no-color --no-renames --name-only --date=short --format=$WHO_FMT"
+  [ -z "${WHO_SINCE:-}" ] || wd_cmd="$wd_cmd --since=$WHO_SINCE"
+  [ -z "${WHO_UNTIL:-}" ] || wd_cmd="$wd_cmd --until=$WHO_UNTIL"
+  wd_cmd="$wd_cmd --"
+  for wd_a in "$@"; do wd_cmd="$wd_cmd $wd_a"; done
+  IFS=$TAB read -r wd_nc wd_first wd_last <<EOS
+$($AWK "$who_sentence_awk" "$TMP/who.c")
+EOS
+  wd_np=$(wc -l < "$TMP/who.p" | tr -d ' ')
+  wd_nx=$(cut -f2 "$TMP/who.f0" | sort -u | wc -l | tr -d ' ')
+  wd_shared=$($AWK -F'\t' '$3 != "" { c[$3]++ } END { for (e in c) if (c[e] > 1) { d++; m += c[e] } printf "%d\t%d", m, d }' "$TMP/who.p")
+  wd_shm=${wd_shared%%"$TAB"*}; wd_shd=${wd_shared#*"$TAB"}
+  wd_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  wd_range="every commit reachable from HEAD"
+  [ -z "$wd_head" ] || wd_range="every commit reachable from HEAD (commit $wd_head)"
+  [ -n "$wd_head" ] || wd_range="no commit at all (the repository has none yet)"
+  [ -z "${WHO_SINCE:-}" ] || wd_range="$wd_range, since $WHO_SINCE"
+  [ -z "${WHO_UNTIL:-}" ] || wd_range="$wd_range, until $WHO_UNTIL"
+  [ "$#" -eq 0 ] || wd_range="$wd_range, limited to the paths given"
+  {
+    printf '#+TITLE: Who worked on this, over time\n\n'
+    printf '* About this document\n:PROPERTIES:\n:READ_AT: %s\n:REPO: %s\n:COMMITS: %s\n:CONTRIBUTORS: %s\n:PATHS: %s\n:END:\n' "$wd_now" "$wd_label" "$wd_nc" "$wd_np" "$wd_nx"
+    printf 'Observed: This document was written by orgfs who (orgfs %s) on %s from the git history of %s, with the command below. It made no network call and read nothing but the log.\n\n' "$VERSION" "$wd_now" "$($AWK -v ZW="$wd_ZW" "$WHO_COMMON_AWK"'BEGIN { print orgsafe(ARGV[1]) }' "$wd_label")"
+    printf '#+BEGIN_EXAMPLE\n%s\n#+END_EXAMPLE\n\n' "$wd_cmd"
+    printf 'Observed: The range is %s. It holds %s by %s, touching %s. The earliest author date among them is %s and the latest is %s.\n\n' \
+      "$wd_range" "$(plur "$wd_nc" commit commits)" "$(plur "$wd_np" contributor contributors)" "$(plur "$wd_nx" path paths)" "${wd_first:-none}" "${wd_last:-none}"
+    printf 'A contributor here is the author name and email exactly as a commit gives them. Nothing is merged, normalised or guessed: two spellings are two headings even where one person may be behind both, and a .mailmap file is not read.\n'
+    if [ "${wd_shd:-0}" -gt 0 ]; then
+      printf '\nObserved: %s share one email address with another heading (%s address%s in all). They stay separate headings.\n' "$(plur "$wd_shm" heading headings)" "$wd_shd" "$([ "$wd_shd" = 1 ] || printf es)"
+    else
+      printf '\nObserved: No two headings share an email address.\n'
+    fi
+    printf '\nDates are author dates in the time zone each author recorded. --since and --until select by git'"'"'s own rule, which is the commit date. Only authors are listed, not committers; a commit that lists no path (a merge or an empty one) has a contributor and a commit but no path.\n'
+    [ "$wd_shallow" != true ] || printf '\nObserved: This is a shallow clone, so history before its cut-off is not here.\n'
+    printf '\nJudged: Nothing. This tool counts and links; it does not say who matters, who is the same person or what a commit was for.\n\n'
+    for wd_k in people:fp paths:fx commits:fc; do
+      case ${wd_k%%:*} in people) wd_prog=$WHO_PEOPLE_AWK;; paths) wd_prog=$WHO_PATHS_AWK;; commits) wd_prog=$WHO_COMMITS_AWK;; esac
+      $AWK -v ZW="$wd_ZW" -v cfile="$TMP/who.c" -v pfile="$TMP/who.p" -v ffile="$TMP/who.${wd_k#*:}" "$WHO_COMMON_AWK$wd_prog" < /dev/null
+      printf '\n'
+    done
+  } > "$wd_out.tmp" || die "who: could not write the document"
+  # no blank line at the very end
+  $AWK '{ L[NR] = $0 } END { n = NR; while (n > 0 && L[n] == "") n--; for (i = 1; i <= n; i++) print L[i] }' "$wd_out.tmp" > "$wd_out"
+  rm -f "$wd_out.tmp"
+}
+
+cmd_who() {
+  _repo=${1:-}; [ -n "$_repo" ] || die "who: need REPO (a local git repository)"
+  shift
+  WHO_SINCE=$O_SINCE; WHO_UNTIL=$O_UNTIL
+  _o=${O_OUT:-$TMP/who.org}
+  who_doc "$_repo" "$_repo" "$_o" "$@"
+  [ -n "$O_OUT" ] || cat "$_o"
+}
+
+# ------------------------------------------------------------------ stack
+# orgfs stack DIR [--seed FILE]: the tools this build stands on, one atom each (DIR/tool-NAME.org) and a
+# story (DIR/story.org) that sets them in order, so `orgfs compose DIR` makes the one file.
+# Each atom quotes the exact command that gave the version and what it printed, the package and its
+# source package and upstream version (dpkg-query, where there is one), the licences the package's own
+# copyright file states, and where and when it was read.  What could not be read is a gap record (the
+# form of the views) that says what is missing, why and what would fill it.  No network is used.
+#
+# A heading tag says where an atom's facts come from:
+#   :SEEN_HERE:  every fact in it was read on this host, now
+#   :CARRIED:    it came from the seed (a stack an earlier run made, perhaps elsewhere); only the version
+#                command was run again here, and the atom says so in its own properties.
+ST_TOOLS="sh awk git python3 emacs org nginx"
+ST_NOTE_COMMITS='NOT CHECKED (needs the upstream tree; intake is a later slice)'
+
+st_sane() { printf '%s' "$1" | tr '\t' ' ' | tr -d '\000-\010\013-\037' | head -n 1; }
+
+# DISPLAY CMD...: run CMD with no input, quote it and the first lines of its output in $TMP/st.block
+st_try() {
+  _disp=$1; shift
+  "$@" < /dev/null > "$TMP/st.out" 2>&1; _rc=$?
+  { printf '$ %s\n' "$_disp"
+    head -n 5 "$TMP/st.out" | sed -e 's/^\*/,*/' -e 's/^#+/,#+/'
+    _nl=$(wc -l < "$TMP/st.out" | tr -d ' ')
+    [ "$_nl" -le 5 ] || printf '[%s more lines not quoted]\n' "$((_nl - 5))"
+    [ "$_rc" = 0 ] || printf '[exit status %s]\n' "$_rc"
+  } >> "$TMP/st.block"
+  if [ -z "$ST_VERSION" ]; then
+    ST_VERSION=$(head -n 5 "$TMP/st.out" | $AWK '/[0-9]+\.[0-9]+/ || /[Vv]ersion [0-9]+/ { print; exit }')
+    ST_VERSION=$(st_sane "$ST_VERSION")
+  fi
+}
+
+# NAME -> the first executable file of that name on PATH (busybox ash's command -v prints a bare applet name)
+st_which() {
+  case $1 in */*|'') return 0;; esac
+  _w_old=$IFS; IFS=:
+  for _w_d in $PATH; do
+    [ -n "$_w_d" ] || _w_d=.
+    case $_w_d in /*) [ -f "$_w_d/$1" ] && [ -x "$_w_d/$1" ] && { IFS=$_w_old; printf '%s\n' "$_w_d/$1"; return 0; };; esac
+  done
+  IFS=$_w_old
+  return 0
+}
+
+# TOOL -> ST_PATH ST_REAL ST_VERSION and the quoted commands in $TMP/st.block
+st_cheap() {
+  ST_PATH=; ST_REAL=; ST_VERSION=; : > "$TMP/st.block"
+  case $1 in
+    sh) ST_PATH=$(command -v sh 2>/dev/null);;
+    awk) ST_PATH=$(command -v "$AWK" 2>/dev/null);;
+    org) ST_PATH=$(command -v emacs 2>/dev/null);;
+    *) ST_PATH=$(command -v "$1" 2>/dev/null);;
+  esac
+  case $ST_PATH in /*) :;; *) ST_PATH=$(st_which "${ST_PATH:-$1}");; esac
+  [ -n "$ST_PATH" ] || return 1
+  ST_REAL=$(readlink -f "$ST_PATH" 2>/dev/null) || ST_REAL=
+  [ -n "$ST_REAL" ] || ST_REAL=$ST_PATH
+  case $1 in
+    sh)
+      case ${ST_REAL##*/} in
+        busybox) st_try "$ST_REAL" "$ST_REAL";;
+        *) st_try "$ST_REAL --version" "$ST_REAL" --version;;
+      esac;;
+    awk)
+      case ${ST_REAL##*/} in
+        busybox) st_try "$ST_REAL" "$ST_REAL";;
+        *) st_try "$ST_REAL --version" "$ST_REAL" --version
+           [ -n "$ST_VERSION" ] || st_try "$ST_REAL -W version" "$ST_REAL" -W version;;
+      esac;;
+    git) st_try "git --version" git --version;;
+    python3) st_try "python3 --version" python3 --version;;
+    emacs) st_try "emacs --version" emacs --version;;
+    org)
+      st_try "emacs -Q --batch --eval '(progn (require (quote org)) (princ (concat (org-release) \"\\n\" (locate-library \"org\") \"\\n\")))'" \
+        emacs -Q --batch --eval '(progn (require (quote org)) (princ (concat (org-release) "\n" (locate-library "org") "\n")))'
+      _ol=$(sed -n 2p "$TMP/st.out")
+      [ -z "$_ol" ] || ST_REAL=$_ol;;
+    nginx) st_try "nginx -v" nginx -v;;
+    *) st_try "$1 --version" "$1" --version;;
+  esac
+  return 0
+}
+
+st_gap() { # TOOL FIELD KIND SHAPE HOW WHY REACH ROUTE
+  gap_open '**' "stack-$1-$2" "$3" "$4" \
+    "orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network" \
+    "bin/orgfs, cmd_stack (orgfs $VERSION); README.org, The tools we stand on" "$5" "$6" "$7"
+  gap_route "$8"
+  gap_close
+  ST_NGAPS=$((ST_NGAPS + 1))
+}
+
+# TOOL -> ST_PKG ST_PKGVER ST_SRC ST_UPSTREAM ST_UPCOMMIT ST_HOME ST_PKGARCH and $TMP/st.pkgblock
+st_package() {
+  ST_PKG=; ST_PKGVER=; ST_SRC=; ST_UPSTREAM=; ST_UPCOMMIT=; ST_HOME=; ST_PKGARCH=; : > "$TMP/st.pkgblock"
+  command -v dpkg-query >/dev/null 2>&1 || return 1
+  _cands="$ST_REAL $ST_PATH"
+  case $ST_REAL in /usr/*) _cands="$_cands ${ST_REAL#/usr}";; /bin/*|/sbin/*|/lib/*|/lib64/*) _cands="$_cands /usr$ST_REAL";; esac
+  ST_PKG=
+  for _c in $_cands; do
+    if dpkg-query -S "$_c" > "$TMP/st.out" 2>&1; then
+      { printf '$ dpkg-query -S %s\n' "$_c"; head -n 3 "$TMP/st.out"; } >> "$TMP/st.pkgblock"
+      ST_PKG=$(head -n 1 "$TMP/st.out" | sed -e 's/: .*//' -e 's/, .*//')
+      break
+    fi
+    { printf '$ dpkg-query -S %s\n' "$_c"; head -n 2 "$TMP/st.out"; } >> "$TMP/st.pkgblock"
+  done
+  [ -n "$ST_PKG" ] || return 1
+  _f='${Package}|${Version}|${Source}|${Architecture}|${Homepage}'
+  if dpkg-query -W -f "$_f\\n" "$ST_PKG" > "$TMP/st.out" 2>&1; then
+    { printf '$ dpkg-query -W -f '"'"'%s\\n'"'"' %s\n' "$_f" "$ST_PKG"; head -n 2 "$TMP/st.out"; } >> "$TMP/st.pkgblock"
+    ST_PKGVER=$($AWK -F'|' 'NR == 1 { print $2 }' "$TMP/st.out")
+    ST_SRC=$($AWK -F'|' 'NR == 1 { s = $3; sub(/ .*/, "", s); print s }' "$TMP/st.out")
+    ST_PKGARCH=$($AWK -F'|' 'NR == 1 { print $4 }' "$TMP/st.out")
+    ST_HOME=$($AWK -F'|' 'NR == 1 { print $5 }' "$TMP/st.out")
+  else
+    return 1
+  fi
+  [ -n "$ST_SRC" ] || ST_SRC=${ST_PKG%%:*}
+  ST_UPSTREAM=$(printf '%s\n' "$ST_PKGVER" | sed -e 's/^[0-9][0-9]*://' -e 's/-[^-]*$//')
+  ST_UPCOMMIT=$(printf '%s\n' "$ST_UPSTREAM" | sed -n 's/.*[+~]git[0-9]\{8\}[+~.]\([0-9a-f]\{7,40\}\).*/\1/p')
+  return 0
+}
+
+# the distinct License: lines of the package's copyright file, in file order -> $TMP/st.lic
+st_licences() { # PKG
+  _cf=${ORGFS_DOC:-/usr/share/doc}/${1%%:*}/copyright
+  ST_COPYRIGHT=$_cf
+  [ -r "$_cf" ] || return 1
+  $AWK '/^License:/ { sub(/^License:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); if ($0 != "" && !seen[$0]++) print }' "$_cf" > "$TMP/st.lic"
+  [ -s "$TMP/st.lic" ]
+}
+
+# NAMES... -> the first row of the register whose first word is one of them: ST_REGLINE ST_REGNAME ST_REGLIC
+st_register() {
+  ST_REGLINE=; ST_REGNAME=; ST_REGLIC=
+  [ -f "$SHARE/licensing.tsv" ] || return 1
+  _r=$($AWK -F'\t' -v names="$*" 'NR > 1 { n = $1; sub(/[ (].*$/, "", n); n = tolower(n)
+      m = split(tolower(names), w, " "); for (i = 1; i <= m; i++) if (w[i] != "" && w[i] == n) { printf "%d\t%s\t%s\n", NR, $1, $2; exit } }' "$SHARE/licensing.tsv")
+  [ -n "$_r" ] || return 1
+  ST_REGLINE=$(printf '%s\n' "$_r" | cut -f1); ST_REGNAME=$(printf '%s\n' "$_r" | cut -f2); ST_REGLIC=$(printf '%s\n' "$_r" | cut -f3)
+}
+
+# TOOL -> the whole atom in $TMP/st.atom: every fact read on this host, now
+st_full() {
+  _t=$1; ST_NGAPS=0; ST_COPYRIGHT=; : > "$TMP/st.lic"; ST_REGLINE=
+  _tag=SEEN_HERE
+  : > "$TMP/st.gaps"
+  st_cheap "$_t" || true
+  _body=$TMP/st.body; : > "$_body"
+  if [ -z "$ST_PATH" ]; then
+    {
+      if [ "$_t" = org ]; then _need=emacs; else _need=$_t; fi
+      printf 'Observed on %s at %s: %s was not found on PATH (command -v printed no path)%s.\n' "$ST_HOST" "$ST_NOW" "$_need" "$([ "$_t" = org ] && printf ', and Org is read by running it')"
+    } >> "$_body"
+    ST_PKG=; ST_REGLINE=
+    st_gap "$_t" absent tool "$_t, its version, package and licence" "not read" "$_need is not on PATH on this host" "anyone on a host that has $_need" "install $_need here, or run orgfs stack on a host that has it, then run orgfs stack DIR again" >> "$TMP/st.gaps"
+  else
+    st_package "$_t" || true
+    {
+      printf 'Observed on %s at %s: %s is at %s' "$ST_HOST" "$ST_NOW" "$_t" "$ST_PATH"
+      [ "$ST_REAL" = "$ST_PATH" ] || printf ', which resolves to %s' "$ST_REAL"
+      printf '. The commands below were run and printed what is quoted.\n\n'
+      printf '#+BEGIN_EXAMPLE\n'; cat "$TMP/st.block"; printf '#+END_EXAMPLE\n'
+    } >> "$_body"
+    if [ -z "$ST_VERSION" ]; then
+      st_gap "$_t" version version "the version as the tool reports it" "the commands above printed no line that looks like a version" "$_t does not report a version this way" "anyone who can read the package metadata or the source" "read the package version below if there is one, or run $_t with the flag its manual names" >> "$TMP/st.gaps"
+    fi
+    if [ -n "$ST_PKG" ]; then
+      {
+        printf '\nObserved: Debian names the owner of that file as package %s, version %s, built from source package %s; the upstream version derived from it (epoch and the last hyphen-part dropped) is %s.\n\n' "$ST_PKG" "$ST_PKGVER" "$ST_SRC" "$ST_UPSTREAM"
+        printf '#+BEGIN_EXAMPLE\n'; cat "$TMP/st.pkgblock"; printf '#+END_EXAMPLE\n'
+      } >> "$_body"
+      if st_licences "$ST_PKG"; then
+        {
+          printf '\nObserved: the distinct License: lines of %s, in file order, are quoted here. They are what the file says; this tool does not say whether they are right or how they combine.\n\n' "$ST_COPYRIGHT"
+          printf '#+BEGIN_EXAMPLE\n'; sed -e 's/^/License: /' -e 's/^\*/,*/' "$TMP/st.lic"; printf '#+END_EXAMPLE\n'
+        } >> "$_body"
+      else
+        st_gap "$_t" licence licence "the licence the package states" "not read" "$ST_COPYRIGHT is missing or has no License: line (a free-form copyright file)" "anyone with the package's copyright file" "read $ST_COPYRIGHT by eye, or the licence file the upstream source ships" >> "$TMP/st.gaps"
+      fi
+      if [ -n "$ST_UPCOMMIT" ]; then
+        printf '\nObserved: the package version names an upstream commit, %s.\n' "$ST_UPCOMMIT" >> "$_body"
+      fi
+    else
+      if command -v dpkg-query >/dev/null 2>&1; then _why="dpkg-query -S found no package that owns $ST_REAL (see the quoted tries, or the file is not from a package)"
+      else _why="there is no dpkg-query on this host, so no package, source package or copyright file was read"; fi
+      st_gap "$_t" package package "package, source package, upstream version and licence" "not read" "$_why" "anyone on a Debian or Ubuntu host with the same file" "run orgfs stack on a host where dpkg-query -S $ST_REAL names a package" >> "$TMP/st.gaps"
+    fi
+    if [ -n "$ST_PKG" ]; then
+      st_gap "$_t" vcs vcs-url "the Vcs-Git URL and the upstream tag of the source package" "not read: dpkg-query -W -f offers only the fields in the status database, and Vcs-Git is not one" "the source package's own metadata is not on this box and no network is used" "anyone with the source package index or the upstream project" "apt-cache showsrc $ST_SRC (the Vcs- lines), after apt-get update where the source indices are missing" >> "$TMP/st.gaps"
+    fi
+    st_gap "$_t" commits commits "the commits that make this version distinct" "$ST_NOTE_COMMITS" "that needs the upstream tree, which this slice does not fetch" "anyone who can clone the upstream tree" "a later intake slice: clone the upstream tree at the version's tag and run orgfs who on it" >> "$TMP/st.gaps"
+    if st_register "$_t" "${ST_PKG%%:*}" "$ST_SRC"; then
+      printf '\nObserved: share/licensing.tsv, the register the licensing page is made from, has a row for %s (line %s) that reads: %s. It is a different source from the copyright file above, and this tool does not say whether the two agree.\n' "$ST_REGNAME" "$ST_REGLINE" "$ST_REGLIC" >> "$_body"
+    else
+      printf '\nObserved: share/licensing.tsv, the register the licensing page is made from, has no row whose first word is %s.\n' "$_t${ST_PKG:+ or ${ST_PKG%%:*}}" >> "$_body"
+    fi
+  fi
+  printf '\nJudged: nothing here. The facts above are copied from the commands and files named, and the gaps say what was not read.\n' >> "$_body"
+  {
+    printf '* %s :%s:\n:PROPERTIES:\n:ORGFS_ATOM: tool-%s.org\n:ROLE: stack-tool\n:TOOL: %s\n:READ_AT: %s\n:READ_ON: %s\n:READ_ENV: %s\n' "$_t" "$_tag" "$_t" "$_t" "$ST_NOW" "$ST_HOST" "$ST_ENV"
+    printf ':PRESENT: %s\n' "$([ -n "$ST_PATH" ] && echo yes || echo no)"
+    [ -z "$ST_PATH" ] || printf ':COMMAND_PATH: %s\n:RESOLVED_PATH: %s\n' "$(st_sane "$ST_PATH")" "$(st_sane "$ST_REAL")"
+    [ -z "$ST_VERSION" ] || printf ':VERSION: %s\n' "$ST_VERSION"
+    [ ! -s "$TMP/st.block" ] || printf ':VERSION_TEXT_SHA256: %s\n' "$(sha_file "$TMP/st.block")"
+    if [ -n "$ST_PKG" ]; then
+      printf ':PACKAGE: %s\n:PACKAGE_VERSION: %s\n:SOURCE_PACKAGE: %s\n:UPSTREAM_VERSION: %s\n' "$ST_PKG" "$(st_sane "$ST_PKGVER")" "$ST_SRC" "$(st_sane "$ST_UPSTREAM")"
+      [ -z "$ST_UPCOMMIT" ] || printf ':UPSTREAM_COMMIT: %s\n' "$ST_UPCOMMIT"
+      [ -z "$ST_HOME" ] || printf ':HOMEPAGE: %s\n' "$(st_sane "$ST_HOME")"
+      if [ -s "$TMP/st.lic" ] && [ -r "$ST_COPYRIGHT" ]; then
+        printf ':COPYRIGHT_PATH: %s\n:LICENSES: %s\n' "$ST_COPYRIGHT" "$(st_sane "$(tr '\n' ';' < "$TMP/st.lic" | sed -e 's/;$//' -e 's/;/; /g')")"
+      fi
+    fi
+    [ -z "$ST_REGLINE" ] || printf ':REGISTER_ROW: %s (line %s of share/licensing.tsv)\n' "$(st_sane "$ST_REGNAME")" "$ST_REGLINE"
+    [ -z "${ST_SEED_SAID:-}" ] || printf ':SEED_SAID_VERSION: %s\n' "$ST_SEED_SAID"
+    printf ':END:\n'
+    cat "$_body"
+    [ ! -s "$TMP/st.gaps" ] || { printf '\n'; cat "$TMP/st.gaps"; }
+  } | $AWK '{ L[NR] = $0 } END { n = NR; while (n > 0 && L[n] == "") n--; for (i = 1; i <= n; i++) print L[i] }' > "$TMP/st.atom"
+}
+
+# SEEDATOM NOW REREADTEXT -> $TMP/st.atom: the seed atom, kept as it was, marked CARRIED, with what was run again here
+st_carry() {
+  $AWK -v now="$ST_NOW" -v from="$ST_SEEDNAME" -v reread="$1" -v gone="$2" '
+    function strip(s) { sub(/[ \t]+:[A-Za-z0-9_@:]+:[ \t]*$/, "", s); return s }
+    NR == 1 { print strip($0) " :CARRIED:"; next }
+    !done && /^:(CARRIED_FROM|CARRIED_AT|REREAD_HERE|REREAD_AT|ABSENT_HERE|NOT_REREAD_HERE):/ { next }
+    !done && /^:END:/ {
+      printf ":CARRIED_FROM: %s\n:CARRIED_AT: %s\n", from, now
+      if (gone == "") printf ":REREAD_HERE: %s\n:REREAD_AT: %s\n", reread, now
+      else if (gone == "unknown") printf ":NOT_REREAD_HERE: this version of orgfs has no way to read this tool\n"
+      else printf ":ABSENT_HERE: yes\n"
+      done = 1 }
+    { print }' "$TMP/st.seedatom" > "$TMP/st.atom"
+}
+
+cmd_stack() {
+  _dir=${1:-}; [ -n "$_dir" ] || die "stack: need DIR (where the atoms are written)"
+  ST_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  ST_HOST=$(st_sane "$(uname -n 2>/dev/null)")
+  ST_ENV=$(st_sane "$(uname -sr 2>/dev/null)")
+  if [ -r /etc/os-release ]; then _pn=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | head -n 1 | tr -d '"'); [ -z "$_pn" ] || ST_ENV="$ST_ENV; $_pn"; fi
+  ST_SEEDNAME=
+  mkdir -p "$TMP/seed" || die "stack: no temp space"
+  if [ -n "$O_SEED" ]; then
+    if [ -d "$O_SEED" ]; then
+      compose_dir "$O_SEED" "$TMP/seedfile" m || die "stack: cannot compose the seed atoms in $O_SEED"
+      _sf=$TMP/seedfile
+    elif [ -f "$O_SEED" ]; then
+      _sf=$O_SEED
+    else
+      die "stack: cannot read the seed: $O_SEED"
+    fi
+    check_fresh "$_sf" "$O_SEED" 1 || die "stack: the seed $O_SEED is STALE: its atoms no longer match its manifest, so nothing in it is carried"
+    scan_stage "$_sf" "$TMP/seed" || die "stack: the seed $O_SEED is not a composed stack"
+    ST_SEEDNAME=$(basename "$O_SEED")
+  fi
+  # everything is read before DIR is touched: DIR may be the seed's own directory
+  mkdir -p "$TMP/new"; rm -f "$TMP/new"/*
+  _list=; _nseen=0; _ncar=0; _ngap=0; _absent=
+  for _t in $ST_TOOLS; do
+    _seeded=0; [ -f "$TMP/seed/tool-$_t.org" ] && _seeded=1
+    ST_SEED_SAID=
+    if [ "$_seeded" = 1 ]; then
+      cp "$TMP/seed/tool-$_t.org" "$TMP/st.seedatom"
+      _want=$($AWK '/^:VERSION_TEXT_SHA256:/ { sub(/^:[A-Z0-9_]+:[ \t]*/, ""); print; exit }' "$TMP/st.seedatom")
+      ST_SEED_SAID=$($AWK '/^:VERSION:/ { sub(/^:[A-Z0-9_]+:[ \t]*/, ""); print; exit }' "$TMP/st.seedatom")
+      if st_cheap "$_t"; then
+        _got=; [ ! -s "$TMP/st.block" ] || _got=$(sha_file "$TMP/st.block")
+        if [ -n "$_want" ] && [ "$_want" = "$_got" ]; then
+          st_carry "the version command (its quoted text hashes to the seed's)" ""
+          cp "$TMP/st.atom" "$TMP/new/tool-$_t.org"; _list="$_list $_t"; _ncar=$((_ncar + 1)); continue
+        fi
+      else
+        st_carry "" gone
+        ST_NGAPS=0
+        {
+          printf '\n'
+          st_gap "$_t" reread version "re-reading the version here" "not read: $_t is not on PATH on this host, so the atom above is the seed's and nothing more" "the tool is absent here" "anyone on a host that has $_t" "install $_t here and run orgfs stack DIR --seed SEED again" 
+        } > "$TMP/st.g1"
+        ST_NGAPS=0
+        cat "$TMP/st.g1" >> "$TMP/st.atom"
+        $AWK '{ L[NR] = $0 } END { n = NR; while (n > 0 && L[n] == "") n--; for (i = 1; i <= n; i++) print L[i] }' "$TMP/st.atom" > "$TMP/st.atom2"; mv "$TMP/st.atom2" "$TMP/st.atom"
+        cp "$TMP/st.atom" "$TMP/new/tool-$_t.org"; _list="$_list $_t"; _ncar=$((_ncar + 1)); continue
+      fi
+    fi
+    # not seeded, or the tool here is not the one the seed described: read it all, here
+    if [ "$_t" = nginx ] && ! command -v nginx >/dev/null 2>&1; then _absent="$_absent $_t"; continue; fi
+    st_full "$_t"
+    cp "$TMP/st.atom" "$TMP/new/tool-$_t.org"; _list="$_list $_t"; _nseen=$((_nseen + 1))
+  done
+  # atoms in the seed that this version of orgfs does not know are carried as they are
+  for _f in "$TMP/seed"/tool-*.org; do
+    [ -f "$_f" ] || continue
+    _b=${_f##*/}; _n=${_b#tool-}; _n=${_n%.org}
+    case " $ST_TOOLS " in *" $_n "*) continue;; esac
+    cp "$_f" "$TMP/st.seedatom"; st_carry "" unknown
+    cp "$TMP/st.atom" "$TMP/new/$_b"; _list="$_list $_n"; _ncar=$((_ncar + 1))
+  done
+  # the story
+  {
+    printf '#+TITLE: The tools orgfs stands on\n\n'
+    printf 'Observed: orgfs stack (orgfs %s) wrote this on %s on the host %s (%s). It reads the tools by running them and the files Debian keeps about them; it makes no network call.\n\n' "$VERSION" "$ST_NOW" "$ST_HOST" "$ST_ENV"
+    if [ -n "$ST_SEEDNAME" ]; then
+      printf 'It started from the seed %s. An atom tagged CARRIED came from that seed: only its version command was run again here, and the atom says so in its own properties. An atom tagged SEEN_HERE was read here, all of it.\n\n' "$ST_SEEDNAME"
+    else
+      printf 'There was no seed, so every atom below was read here and is tagged SEEN_HERE. An atom tagged CARRIED would have come from a seed instead.\n\n'
+    fi
+    [ -z "$_absent" ] || printf 'Observed: not found on PATH, so without an atom:%s.\n\n' "$_absent"
+    for _t in $_list; do printf '#+INCLUDE: "tool-%s.org"\n\n' "$_t"; done
+    printf '* How to read one of these\nEach tool is one atom: a heading, a drawer of properties for programs, and prose with the quoted commands for people. What could not be read is a gap record, in the same form as the gaps in a view of a spoke, with the command that would fill it.\n'
+  } > "$TMP/new/story.org"
+  # DIR now: the old atoms of this kind go, the new come
+  mkdir -p "$_dir" || die "stack: cannot create $_dir"
+  rm -f "$_dir"/tool-*.org "$_dir/story.org"
+  cp "$TMP/new"/*.org "$_dir/" || die "stack: cannot write into $_dir"
+  # the result must be a declaration of atoms orgfs itself accepts, and its gaps whole
+  compose_dir "$_dir" "$TMP/stackcheck" m || die "stack: what was written in $_dir is not a set of atoms orgfs accepts (this is a bug in orgfs stack)"
+  $AWK -v mode=list "$GAPS_AWK" "$TMP/stackcheck" > "$TMP/stackgaps" || die "stack: a gap record is incomplete (this is a bug in orgfs stack)"
+  _ngap=$($AWK '/^\*+ gap /{ n++ } END { print n + 0 }' "$TMP/stackcheck")
+  printf 'stack: wrote %s: %s atoms (%s SEEN_HERE, %s CARRIED), %s gap records\n' "$_dir" "$((_nseen + _ncar))" "$_nseen" "$_ncar" "$_ngap"
+}
+
+# The document `orgfs who` writes, as HTML.  It reads only the shapes who writes: headings with a
+# :CUSTOM_ID: (the id of the element), paragraphs of one line, lists two deep, example blocks, and links
+# of the form [[#id][label]].  Nothing is added to what the document says.
+WHO_HTML_AWK='
+function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); return s }
+function links(s,   out, i, j, k, id, lab) {
+  out = ""
+  while ((i = index(s, "[[#")) > 0) {
+    out = out substr(s, 1, i - 1); s = substr(s, i + 3)
+    j = index(s, "]["); k = index(s, "]]")
+    if (j == 0 || k == 0 || j > k) { out = out "[[#"; continue }
+    id = substr(s, 1, j - 1); lab = substr(s, j + 2, k - j - 2)
+    out = out "<a href=\"#" id "\">" lab "</a>"; s = substr(s, k + 2)
+  }
+  return out s
+}
+function closelist() { if (cur > 0) { printf "</li>\n"; while (cur > 0) { printf "</ul>\n"; cur--; if (cur > 0) printf "</li>\n" } } }
+function item(depth, text) {
+  if (depth > cur) { printf "<ul>\n"; cur++ }
+  else { while (cur > depth) { printf "</li>\n</ul>\n"; cur-- }; printf "</li>\n" }
+  printf "<li>%s", text
+}
+function heading(   t) {
+  t = esc(htxt)
+  printf "<h%d%s>%s</h%d>\n", hl + 1, (hid != "") ? " id=\"" hid "\"" : "", links(t), hl + 1
+  want = 0; hid = ""
+}
+function para(s,   t) {
+  t = links(esc(s))
+  if (t ~ /^Observed: /) t = "<span class=\"tag\">observed</span>" substr(t, 11)
+  else if (t ~ /^Judged: /) t = "<span class=\"tag\">judged</span>" substr(t, 9)
+  printf "<p>%s</p>\n", t
+}
+BEGIN { cur = 0; want = 0; indr = 0; pre = 0 }
+pre { if ($0 ~ /^#\+END_EXAMPLE/) { printf "</pre>\n"; pre = 0 } else print esc($0); next }
+indr { if ($0 == ":END:") { indr = 0; heading() } else if ($0 ~ /^:CUSTOM_ID:/) { hid = $0; sub(/^:CUSTOM_ID:[ \t]*/, "", hid) }; next }
+want { if ($0 == ":PROPERTIES:") { indr = 1; next } else heading() }
+/^#\+TITLE:/ { next }
+/^#\+BEGIN_EXAMPLE/ { closelist(); printf "<pre>\n"; pre = 1; next }
+/^\*+ / { closelist(); n = 0; while (substr($0, n + 1, 1) == "*") n++; hl = n; htxt = substr($0, n + 2); want = 1; hid = ""; next }
+/^ *- / { match($0, /^ */); item(int(RLENGTH / 2) + 1, links(esc(substr($0, RLENGTH + 3)))); next }
+/^[ \t]*$/ { closelist(); next }
+{ closelist(); para($0) }
+END { if (want) heading(); closelist() }
+'
+
+site_who() { # OUT: who.org and who.html, or a page that says there was no history to read
+  _wrepo=${O_REPO:-}
+  if [ -z "$_wrepo" ]; then
+    _wtop=$(git -C "$HERE/.." rev-parse --show-toplevel 2>/dev/null) || _wtop=
+    _where=$(cd "$HERE/.." && pwd -P)
+    [ -z "$_wtop" ] || [ "$_wtop" != "$_where" ] || _wrepo=$HERE/..
+  fi
+  {
+    html_head "Who worked on this, over time" who
+    printf '<h1>Who worked on this, over time</h1>\n'
+    if [ -n "$_wrepo" ]; then
+      WHO_SINCE=; WHO_UNTIL=; WHO_CMD_REPO=REPO
+      who_doc "$_wrepo" "the repository this site was built from" "$1/who.org"
+      cat <<EOF
+<p class="status">Status: orgfs $VERSION, before 1.0. This page is the output of <code>orgfs who</code> over the history of the repository this site was built from, turned into HTML, and nothing in it is added by hand. Names and emails are as the commits give them. Nothing on this page says the tests passed; run <code>make check</code>.</p>
+<p>In the command, REPO is the repository this site was built from. The same document, as the Org file Emacs reads: <a href="who.org">who.org</a>. To run it on your own repository, see <em>Try it on your own repository</em> in the README at <a href="https://github.com/inputloop/orgfs">github.com/inputloop/orgfs</a>.</p>
+EOF
+      $AWK "$WHO_HTML_AWK" "$1/who.org"
+      cat <<EOF
+<h2>Not checked</h2>
+<ul>
+<li>That the log is the whole history: a shallow clone, a rewritten history or a squashed import shows less than happened.</li>
+<li>Whether any two headings are one person; the page does not guess.</li>
+<li>Work that git does not record: a co-author named only in a message, a committer who is not the author, work done elsewhere.</li>
+</ul>
+EOF
+    else
+      cat <<EOF
+<p class="status">Status: orgfs $VERSION, before 1.0. Nothing on this page says the tests passed; run <code>make check</code>.</p>
+<p><span class="tag">observed</span>This site was built by a copy of orgfs that is not inside a git repository, and no repository was named, so there was no history to read.</p>
+<h2>Not checked</h2>
+<ul>
+<li><span class="tag">judged</span>NOT CHECKED: who worked on orgfs, over time. To fill it, build the site from a checkout: <code>sh bin/orgfs site examples/licensing.d _site</code>, or name a repository with <code>--repo DIR</code>.</li>
+</ul>
+EOF
+    fi
+    html_foot
+  } > "$1/who.html"
+}
+
 # ------------------------------------------------------------------ site
 esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
 esc_s() { printf '%s' "$1" | esc; }
@@ -1640,6 +2290,7 @@ html_head() { # TITLE PAGE
 <li><a href="index.html"$(cur index "$2")>About</a></li>
 $([ "${_allpublic:-0}" != 1 ] || printf '<li><a href="declaration.html"%s>The declaration</a></li>\n' "$(cur declaration "$2")")
 <li><a href="made.html"$(cur made "$2")>How this was made</a></li>
+<li><a href="who.html"$(cur who "$2")>Who worked on this</a></li>
 <li><a href="gaps.html"$(cur gaps "$2")>A view with its gaps</a></li>
 <li><a href="licensing.html"$(cur licensing "$2")>Licensing stack</a></li>
 <li><a href="rights.html"$(cur rights "$2")>Your rights on this site</a></li>
@@ -2125,7 +2776,8 @@ the licences of the other software involved.</p>
 EOF
     html_foot
   } > "$_out/rights.html"
-  printf 'site: wrote %s (index.html gaps.html licensing.html rights.html orgfs.css view-visitor.org)\n' "$_out"
+  site_who "$_out"
+  printf 'site: wrote %s (index.html gaps.html licensing.html rights.html who.html orgfs.css view-visitor.org)\n' "$_out"
 }
 
 # ------------------------------------------------------------------ demo
@@ -2237,12 +2889,13 @@ _n=$#
 while [ "$_n" -gt 0 ]; do
   _a=$1; shift; _n=$((_n - 1))
   case $_a in
-    --spoke|--as|--object|--out|--into|--root|--decl)
+    --spoke|--as|--object|--out|--into|--root|--decl|--since|--until|--seed|--repo)
       [ "$_n" -gt 0 ] || die "$_a needs a value"
       _v=$1; shift; _n=$((_n - 1))
       case $_a in
         --spoke) O_SPOKE=$_v;; --as) O_AS=$_v;; --object) O_OBJECT=$_v;; --out) O_OUT=$_v;;
         --into) O_INTO=$_v;; --root) O_ROOT=$_v;; --decl) O_DECL=$_v;;
+        --since) O_SINCE=$_v;; --until) O_UNTIL=$_v;; --seed) O_SEED=$_v;; --repo) O_REPO=$_v;;
       esac;;
     --no-mounts) O_NOMOUNTS=1;;
     --source) O_SOURCE=1;;
@@ -2266,6 +2919,8 @@ case $_cmd in
   trace) cmd_trace "$@";;
   layout) cmd_layout "$@";;
   site) cmd_site "$@";;
+  who) cmd_who "$@";;
+  stack) cmd_stack "$@";;
   demo) cmd_demo "$@";;
   version|-V|--version) echo "orgfs $VERSION";;
   help|-h|--help|'') usage;;

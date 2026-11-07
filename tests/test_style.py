@@ -45,7 +45,7 @@ class StyleTests(unittest.TestCase):
         with open(os.path.join(cls.out, "orgfs.css")) as f:
             cls.css = f.read()
         cls.pages = {}
-        for n in ("index.html", "made.html", "gaps.html", "licensing.html", "rights.html"):
+        for n in ("index.html", "made.html", "gaps.html", "licensing.html", "rights.html", "who.html"):
             with open(os.path.join(cls.out, n), encoding="utf-8") as f:
                 cls.pages[n] = f.read()
 

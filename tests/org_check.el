@@ -25,7 +25,14 @@
 ;;      found by org-element and read by org-table, its hashes agree with ones Emacs computes
 ;;      itself, and the identity on its heading is the one `orgfs check' prints;
 ;;  (c) no line is outside Org syntax: only headlines, property drawers, paragraphs, lists and the
-;;      named table are in the file, and no comment line of orgfs's own.
+;;      named table are in the file, and no comment line of orgfs's own;
+;;  (d) `orgfs who': Org parses the document, finds every [[#id]] link's target with its own
+;;      `org-find-property', and every person, path and commit is linked to the other two kinds and
+;;      linked back from them (the interlocked triangles); the counts agree with git's own;
+;;  (e) `orgfs stack': Org expands the stack's source form to the bytes orgfs composes, reads each
+;;      atom's heading tag (SEEN_HERE or CARRIED) and the gap records' properties, and a run that
+;;      starts from a seed marks what it carried as CARRIED and nothing carried as SEEN_HERE.
+;; No emacs: NOT CHECKED, never a pass (org_check.sh).  No git: (d) is NOT CHECKED and says so.
 
 ;;; Code:
 
@@ -137,8 +144,10 @@
       (oc-assert (equal (car rows) '("atom" "sha256")) "the manifest header is %S, not (atom sha256)" (car rows))
       (cdr rows))))
 
-(defun oc-check-expanded (text dir label)
-  "Org's reading of TEXT, the expanded form of the atoms in DIR."
+(defun oc-check-expanded (text dir label &optional no-identity allowed)
+  "Org's reading of TEXT, the expanded form of the atoms in DIR.
+NO-IDENTITY: the directory has no spokes, so `orgfs check' has no identity to print.
+ALLOWED: the element types the file may hold (default `oc-allowed-elements')."
   (let (tree)
     (with-temp-buffer
       (insert text)
@@ -146,7 +155,7 @@
       (setq tree (org-element-parse-buffer))
       ;; (c) only Org syntax, nothing of ours
       (let ((bad (org-element-map tree org-element-all-elements
-                   (lambda (e) (unless (memq (org-element-type e) oc-allowed-elements) (org-element-type e))))))
+                   (lambda (e) (unless (memq (org-element-type e) (or allowed oc-allowed-elements)) (org-element-type e))))))
         (oc-assert (null bad) "%s: elements Org finds that a composed file should not hold: %S" label (delete-dups (delq nil bad))))
       (oc-assert (not (string-match-p "^# " text)) "%s: a comment line" label)
       (oc-assert (not (string-match-p "orgfs-\\(atom\\|compose\\)" text)) "%s: a marker of the old kind" label)
@@ -166,11 +175,12 @@
             (oc-assert (string= (cadr r) (secure-hash 'sha256 (oc-bytes (expand-file-name (car r) dir))))
                        "%s: the manifest hash of %s is not the SHA-256 Emacs computes" label (car r))))
         ;; the identity, a property of the manifest heading
-        (let ((ids (oc-property-values tree "ORGFS_IDENTITY"))
-              (printed (oc-orgfs-ok "check" dir "--no-mounts")))
+        (let ((ids (oc-property-values tree "ORGFS_IDENTITY")))
           (oc-assert (= (length ids) 1) "%s: %d ORGFS_IDENTITY properties" label (length ids))
-          (oc-assert (string-match-p (concat "^file-identity\t" (regexp-quote (car ids)) "$") printed)
-                     "%s: the identity on the manifest heading is not the one orgfs check prints" label))))))
+          (unless no-identity
+            (let ((printed (oc-orgfs-ok "check" dir "--no-mounts")))
+              (oc-assert (string-match-p (concat "^file-identity\t" (regexp-quote (car ids)) "$") printed)
+                         "%s: the identity on the manifest heading is not the one orgfs check prints" label))))))))
 
 ;;; the cases
 
@@ -213,11 +223,198 @@
     (oc-assert (string-match-p "\n\\*\\*\\* A\n" ours) "the fixture did not exercise re-levelling")
     (oc-say "org_check: ok fixtures (re-levelling, blank edges, nesting, ..)")))
 
+
+;;; (d) orgfs who
+
+(defvar oc-who-allowed
+  '(org-data headline section property-drawer node-property paragraph plain-list item example-block keyword)
+  "The element types a `who' document holds.")
+
+(defun oc-git-run (dir env &rest args)
+  "Run git in DIR with ENV added to the environment; return its output."
+  (let ((process-environment (append env '("GIT_CONFIG_GLOBAL=/dev/null" "GIT_CONFIG_NOSYSTEM=1" "GIT_TERMINAL_PROMPT=0")
+                                     process-environment)))
+    (with-temp-buffer
+      (let ((rc (apply #'call-process "git" nil t nil "-C" dir args)))
+        (oc-assert (eq rc 0) "git %S failed: %s" args (buffer-string))
+        (buffer-string)))))
+
+(defun oc-commit (dir name email date subject &optional files empty)
+  (dolist (f files)
+    (let ((p (expand-file-name (car f) dir)))
+      (make-directory (file-name-directory p) t)
+      (write-region (cdr f) nil p t 'silent)))
+  (oc-git-run dir nil "add" "-A")
+  (oc-git-run dir (list (concat "GIT_AUTHOR_NAME=" name) (concat "GIT_AUTHOR_EMAIL=" email) (concat "GIT_AUTHOR_DATE=" date)
+                        "GIT_COMMITTER_NAME=Committer" "GIT_COMMITTER_EMAIL=c@example.org" (concat "GIT_COMMITTER_DATE=" date))
+              "commit" "-q" "-m" subject (if empty "--allow-empty" "--no-edit")))
+
+(defun oc-who-fixture ()
+  (let ((repo (expand-file-name "who-repo" oc-tmp)))
+    (make-directory repo t)
+    (oc-git-run repo nil "init" "-q" "-b" "main")
+    (oc-commit repo "Alice Example" "alice@example.org" "2026-01-10T09:00:00+00:00" "first" '(("a.txt" . "a\n") ("dir/b.txt" . "b\n")))
+    (oc-commit repo "Bob Example" "bob@example.org" "2026-02-01T10:00:00+00:00" "second [[evil]] link" '(("a.txt" . "more\n") ("sp ace.txt" . "s\n")))
+    (oc-commit repo "alice example" "alice@example.org" "2026-03-01T11:00:00+00:00" "the other spelling" '(("dir/b.txt" . "again\n")))
+    (oc-commit repo "Alice Example" "alice@example.org" "2026-03-05T12:00:00+00:00" "empty" nil t)
+    repo))
+
+(defun oc-headline-id (hl)
+  "The CUSTOM_ID of headline HL, from the first drawer of its section, or nil."
+  (let ((sec (car (org-element-contents hl))))
+    (when (eq (org-element-type sec) 'section)
+      (let ((dr (car (org-element-contents sec))))
+        (when (eq (org-element-type dr) 'property-drawer)
+          (org-element-map dr 'node-property
+            (lambda (np) (when (string= (upcase (org-element-property :key np)) "CUSTOM_ID") (org-element-property :value np)))
+            nil t))))))
+
+(defun oc-enclosing-headline (e)
+  (let ((p (org-element-property :parent e)))
+    (while (and p (not (eq (org-element-type p) 'headline))) (setq p (org-element-property :parent p)))
+    p))
+
+(defun oc-kind (id) (car (split-string id "-")))
+
+(defun oc-check-who (doc repo label &optional narrowed)
+  "Org's reading of DOC, what `orgfs who' wrote about REPO.  NARROWED: a range or paths were given, so git's whole-history counts do not apply."
+  (with-temp-buffer
+    (insert doc)
+    (let ((org-inhibit-startup t)) (org-mode))
+    (let* ((tree (org-element-parse-buffer))
+           (bad (org-element-map tree org-element-all-elements
+                  (lambda (e) (unless (memq (org-element-type e) oc-who-allowed) (org-element-type e)))))
+           (ids (make-hash-table :test 'equal))
+           (edges nil))
+      (oc-assert (null bad) "%s: elements Org finds that a who document should not hold: %S" label (delete-dups (delq nil bad)))
+      (org-element-map tree 'headline
+        (lambda (hl) (let ((id (oc-headline-id hl)))
+                       (when id
+                         (oc-assert (not (gethash id ids)) "%s: duplicate CUSTOM_ID %s" label id)
+                         (puthash id t ids)))))
+      (org-element-map tree 'link
+        (lambda (ln)
+          (oc-assert (equal (org-element-property :type ln) "custom-id") "%s: a link of type %s" label (org-element-property :type ln))
+          (let* ((to (org-element-property :path ln))
+                 (hl (oc-enclosing-headline ln))
+                 (from (and hl (oc-headline-id hl))))
+            (oc-assert (gethash to ids) "%s: the link to %s resolves to no heading" label to)
+            ;; and Org's own search finds it
+            (oc-assert (save-excursion (org-find-property "CUSTOM_ID" to)) "%s: org-find-property does not find %s" label to)
+            (when from (push (cons from to) edges)))))
+      (setq edges (delete-dups edges))
+      (dolist (e edges)
+        (unless (equal (oc-kind (car e)) (oc-kind (cdr e)))
+          (oc-assert (member (cons (cdr e) (car e)) edges) "%s: %s links %s but %s does not link back" label (car e) (cdr e) (cdr e))))
+      (let ((commits 0) (people 0))
+        (maphash
+         (lambda (id _v)
+           (let ((out (mapcar #'cdr (cl-remove-if-not (lambda (e) (equal (car e) id)) edges))))
+             (pcase (oc-kind id)
+               ("commit" (cl-incf commits)
+                (oc-assert (= 1 (length (cl-remove-if-not (lambda (o) (equal (oc-kind o) "person")) out)))
+                           "%s: commit %s does not link exactly one contributor" label id))
+               ("person" (cl-incf people)
+                (oc-assert (cl-find-if (lambda (o) (equal (oc-kind o) "commit")) out) "%s: %s links no commit" label id))
+               ("path"
+                (oc-assert (cl-find-if (lambda (o) (equal (oc-kind o) "commit")) out) "%s: %s links no commit" label id)
+                (oc-assert (cl-find-if (lambda (o) (equal (oc-kind o) "person")) out) "%s: %s links no contributor" label id)))))
+         ids)
+        (unless narrowed
+         (let ((want-commits (string-to-number (string-trim (oc-git-run repo nil "rev-list" "--count" "HEAD"))))
+              (want-people (length (delete-dups (split-string (oc-git-run repo nil "log" "--no-mailmap" "--format=%an <%ae>") "\n" t)))))
+          (oc-assert (= commits want-commits) "%s: %d commit headings, git counts %d" label commits want-commits)
+          (oc-assert (= people want-people) "%s: %d contributor headings, git counts %d distinct name and email pairs" label people want-people))))
+      (length edges))))
+
+(defun oc-who-case ()
+  (if (not (executable-find "git"))
+      (oc-say "org_check: NOT CHECKED who (no git here)")
+    (let* ((repo (oc-who-fixture))
+           (doc (oc-orgfs-ok "who" repo))
+           (n (oc-check-who doc repo "who")))
+      (oc-assert (> n 10) "who: only %d links read" n)
+      ;; a narrowed range reads the same way
+      (oc-check-who (oc-orgfs-ok "who" repo "dir") repo "who dir" t)
+      (oc-say "org_check: ok who (%d links resolved by Org; contributors, paths and commits linked both ways)" n))))
+
+;;; (e) orgfs stack
+
+(defun oc-stack-tags (tree)
+  "An alist (ATOM-NAME TAGS ATOM-PATH CARRIED-FROM) for each top-level atom headline of TREE."
+  (let (out)
+    (org-element-map tree 'headline
+      (lambda (hl)
+        (when (= 1 (org-element-property :level hl))
+          (let ((atom nil) (from nil) (sec (car (org-element-contents hl))))
+            (when (eq (org-element-type (car (org-element-contents sec))) 'property-drawer)
+              (org-element-map (car (org-element-contents sec)) 'node-property
+                (lambda (np)
+                  (let ((k (upcase (org-element-property :key np))))
+                    (cond ((string= k "ORGFS_ATOM") (setq atom (org-element-property :value np)))
+                          ((string= k "CARRIED_FROM") (setq from (org-element-property :value np))))))))
+            (when (and atom (string-match-p "\\`tool-" atom))
+              (push (list (org-element-property :raw-value hl) (org-element-property :tags hl) atom from) out))))))
+    (nreverse out)))
+
+(defun oc-stack-gaps-whole (tree label)
+  "Every gap headline of TREE has the properties of a gap record and at least one ROUTE."
+  (let ((n 0))
+    (org-element-map tree 'headline
+      (lambda (hl)
+        (when (string-prefix-p "gap " (org-element-property :raw-value hl))
+          (cl-incf n)
+          (let (keys)
+            (org-element-map (org-element-contents hl) 'node-property
+              (lambda (np) (push (upcase (org-element-property :key np)) keys)))
+            (dolist (k '("ROLE" "GAP_ID" "WHAT_KIND" "WHAT_SHAPE" "RULE" "RULE_AT" "HOW" "WHY" "REACH" "ROUTE"))
+              (oc-assert (member k keys) "%s: gap %s lacks %s" label (org-element-property :raw-value hl) k))))))
+    n))
+
+(defun oc-stack-case ()
+  (let* ((d1 (expand-file-name "stack1" oc-tmp))
+         (d2 (expand-file-name "stack2" oc-tmp))
+         (src (expand-file-name "stack-src.org" oc-tmp))
+         (comp (expand-file-name "stack1.org" oc-tmp))
+         (comp2 (expand-file-name "stack2.org" oc-tmp)))
+    (oc-orgfs-ok "stack" d1)
+    (oc-orgfs-ok "compose" d1 "--out" comp)
+    (oc-orgfs-ok "compose" d1 "--source" "--out" src)
+    (let ((org (oc-org-expand src)) (ours (oc-read comp)))
+      (oc-assert (string= org ours) "(a) Org's expansion of the stack's source form differs from orgfs compose")
+      (oc-check-expanded org d1 "stack" t (append oc-who-allowed '(quote-block horizontal-rule table table-row)))
+      (let* ((tree (with-temp-buffer (insert org) (let ((org-inhibit-startup t)) (org-mode)) (org-element-parse-buffer)))
+             (tags (oc-stack-tags tree)))
+        (oc-assert tags "stack: Org finds no tool atoms")
+        (dolist (a tags)
+          (oc-assert (equal (nth 1 a) '("SEEN_HERE")) "stack: Org reads the tags of %s as %S, not (SEEN_HERE), with no seed" (car a) (nth 1 a))
+          (oc-assert (null (nth 3 a)) "stack: %s says it was carried, with no seed" (car a)))
+        (let ((ng (oc-stack-gaps-whole tree "stack")))
+          (oc-assert (> ng 0) "stack: no gap record at all (the commits that make a version distinct is always one)"))))
+    ;; the second run starts from the first
+    (oc-orgfs-ok "stack" d2 "--seed" comp)
+    (oc-orgfs-ok "compose" d2 "--out" comp2)
+    (let* ((text (oc-read comp2))
+           (tree (with-temp-buffer (insert text) (let ((org-inhibit-startup t)) (org-mode)) (org-element-parse-buffer)))
+           (tags (oc-stack-tags tree)) (carried 0))
+      (dolist (a tags)
+        (let ((tg (nth 1 a)))
+          (oc-assert (or (equal tg '("SEEN_HERE")) (equal tg '("CARRIED"))) "stack: %s has the tags %S" (car a) tg)
+          (if (equal tg '("CARRIED"))
+              (progn (cl-incf carried)
+                     (oc-assert (equal (nth 3 a) "stack1.org") "stack: %s is CARRIED but names %S as its seed" (car a) (nth 3 a)))
+            (oc-assert (null (nth 3 a)) "stack: %s is SEEN_HERE yet says it was carried" (car a)))))
+      (oc-assert (> carried 0) "stack: nothing was carried although the seed was this very host")
+      (oc-stack-gaps-whole tree "stack seeded")
+      (oc-say "org_check: ok stack (%d atoms read by Org, %d carried from the seed, tags and gap records whole)" (length tags) carried))))
+
 (defun oc-main ()
   (oc-assert (not (version< (org-release) "9.3")) "Org %s is older than 9.3: include levels differ; orgfs needs 9.3 or later" (org-release))
   (oc-assert (file-readable-p oc-bin) "no orgfs at %s" oc-bin)
   (oc-example-case)
   (oc-fixture-case)
+  (oc-who-case)
+  (oc-stack-case)
   (princ (format "org_check: OK (%d assertions; Org %s, Emacs %s)\n" oc-count (org-release) emacs-version)
          #'external-debugging-output)
   (ignore-errors (delete-directory oc-tmp t))
