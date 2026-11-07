@@ -17,7 +17,7 @@ set -u
 LC_ALL=C
 export LC_ALL
 AWK=${ORGFS_AWK:-awk}
-VERSION=0.1.0
+VERSION=0.2.0
 HERE=$(cd "$(dirname "$0")" && pwd)
 SHARE=${ORGFS_SHARE:-$HERE/../share}
 
@@ -40,41 +40,63 @@ sha_file() { sha_stdin < "$1"; }
 size_of() { wc -c < "$1" | tr -d ' '; }
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 usage: orgfs COMMAND ...
-  check DECL [--no-mounts]   parse and sanity-check a declaration; print identity
-  plan DECL [--as HOST]      which stripes each member holds (rendezvous hashing)
-  agree DECL OTHER...        refuse unless every declaration has the same identity
-  put DECL FILE              cut FILE into stripes and write them to the members
-  get DECL ID OUT            reassemble object ID into OUT, verifying every hash
-  verify DECL                every slice on REPLICAS members, every hash right
+  check DECL [--spoke S] [--no-mounts]
+                             parse and sanity-check a declaration; print identities
+  plan DECL [--spoke S] [--as HOST]
+                             which stripes each member holds (rendezvous hashing)
+  agree DECL OTHER... [--spoke S]
+                             refuse unless every declaration has the same identity
+  put DECL FILE [--spoke S]  cut FILE into stripes and write them to the members
+  get DECL ID OUT [--spoke S]
+                             reassemble object ID into OUT, verifying every hash
+  verify DECL [--spoke S]    every slice on REPLICAS members, every hash right
+  materialize DECL --as HOST [--spoke S] [--object ID] [--out FILE]
+                             the view HOST may have of DECL: what it fetches names its
+                             source, what it may not see is a gap record that says why
+  assemble DECL --as HOST --into DIR [--spoke S] [--object ID] [--out FILE]
+                             gather what HOST may reach at that grain (bytes into DIR);
+                             a gap record stands in for everything else
+  routes VIEW                list every gap in a view and the routes that would fill it
+  trace VIEW                 follow a view back to its sources and check they know it
+  trace DECL --object ID [--spoke S]
+                             follow an object to the hosts that materialized it
+  layout [--root PREFIX] [--decl DECL]
+                             check the host's fixed layout (/c4, /spokes, owners)
   site DECL OUT              render a static, script-free HTML site into OUT
-  demo [DIR]                 the licensing demo over 5 local directories
+  demo [DIR]                 the demo over 5 local directories and 3 spokes
   version
-EOF
+USAGE
 }
 
 # ------------------------------------------------------------------ parse
-# Reads the Org declaration, ignores prose, prints normalized property data
-# (unsorted) on stdout; complaints on stderr, status 1 if anything is wrong.
+# Reads the Org declaration, ignores prose.  Prints, unsorted, on stdout:
+#   D <spoke> spoke  KEY VALUE             the normalized data (identity is made of it)
+#   D <spoke> member HOST KEY VALUE
+#   L <spoke> spoke  KEY LINE              where the declaration says it (not in the identity)
+#   L <spoke> member HOST KEY LINE
+# Complaints on stderr, status 1 if anything is wrong.
 PARSE_AWK='
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
 function fail(m) { printf "orgfs: %s:%d: %s\n", FILENAME, NR, m > "/dev/stderr"; bad = 1 }
 function endfail(m) { printf "orgfs: %s: %s\n", FILENAME, m > "/dev/stderr"; bad = 1 }
-BEGIN { bad = 0; cur = ""; drawer = 0; nsp = 0; nm = 0 }
+BEGIN { bad = 0; cur = ""; drawer = 0; nsp = 0; sname = "" }
 /^\*+[ \t]/ {
   drawer = 0; cur = ""
   n = 0
   while (substr($0, n + 1, 1) == "*") n++
   nw = split(trim(substr($0, n + 1)), w, /[ \t]+/)
+  if (n == 1) sname = ""
   if (n == 1 && w[1] == "spoke") {
     if (nw != 2) fail("heading must read: spoke NAME")
-    else if (++nsp > 1) fail("only one spoke per declaration")
-    else { name = w[2]; cur = "spoke" }
+    else if (w[2] in sseen) fail("duplicate spoke " w[2])
+    else { sname = w[2]; sseen[sname] = 1; nsp++; sorder[nsp] = sname; nm[sname] = 0; kl[sname, "heading"] = NR; cur = "spoke" }
   } else if (n == 2 && w[1] == "member") {
     if (nw != 2) fail("heading must read: member HOST")
-    else if (w[2] in seen) fail("duplicate member " w[2])
-    else { host = w[2]; seen[host] = 1; order[++nm] = host; cur = "member" }
+    else if (sname == "") fail("member heading outside a spoke")
+    else if ((sname, w[2]) in seen) fail("duplicate member " w[2] " in spoke " sname)
+    else { host = w[2]; seen[sname, host] = 1; nm[sname]++; order[sname, nm[sname]] = host; ml[sname, host, "heading"] = NR; cur = "member" }
   }
   next
 }
@@ -89,67 +111,79 @@ drawer {
   if (val == "") { fail("empty value for " key); next }
   if (cur == "spoke") {
     if (key !~ /^(RING|STRIPES|REPLICAS|VISIBILITY)$/) { fail("unknown spoke property " key); next }
-    if (key in sp) { fail("duplicate property " key); next }
-    sp[key] = val
+    if ((sname, key) in sp) { fail("duplicate property " key); next }
+    sp[sname, key] = val; kl[sname, key] = NR
   } else {
     if (key !~ /^(ROOT|TRANSPORT)$/) { fail("unknown member property " key); next }
-    if ((host, key) in mp) { fail("duplicate property " key " on member " host); next }
-    mp[host, key] = val
+    if ((sname, host, key) in mp) { fail("duplicate property " key " on member " host); next }
+    mp[sname, host, key] = val; ml[sname, host, key] = NR
   }
   next
 }
 END {
   if (bad) exit 1
   if (nsp == 0) endfail("no \"* spoke NAME\" heading")
-  else {
-    if (name !~ /^[a-z0-9][a-z0-9_-]*$/) endfail("spoke name must match [a-z0-9][a-z0-9_-]*")
-    split("RING STRIPES REPLICAS VISIBILITY", req, " ")
-    for (j = 1; j <= 4; j++) if (!(req[j] in sp)) endfail("spoke " name " lacks property " req[j])
-    ring = toupper(sp["RING"]); vis = tolower(sp["VISIBILITY"])
-    st = sp["STRIPES"]; rp = sp["REPLICAS"]
-    if (("RING" in sp) && ring !~ /^(GRAIN|GREAT|GRAND)$/) endfail("RING must be GRAIN, GREAT or GRAND")
-    if (("VISIBILITY" in sp) && vis !~ /^(public|private|sealed)$/) endfail("VISIBILITY must be public, private or sealed")
-    if (("STRIPES" in sp) && (st !~ /^[0-9]+$/ || st + 0 < 1 || st + 0 > 256)) endfail("STRIPES must be an integer 1..256")
-    if (("REPLICAS" in sp) && (rp !~ /^[0-9]+$/ || rp + 0 < 1)) endfail("REPLICAS must be an integer >= 1")
-    if (nm < 1) endfail("no \"** member HOST\" headings")
-    else if (("REPLICAS" in sp) && rp ~ /^[0-9]+$/ && rp + 0 > nm) endfail("REPLICAS (" rp ") exceeds the number of members (" nm ")")
-    for (j = 1; j <= nm; j++) {
-      h = order[j]
+  split("RING STRIPES REPLICAS VISIBILITY", req, " ")
+  for (si = 1; si <= nsp; si++) {
+    s = sorder[si]
+    if (s !~ /^[a-z0-9][a-z0-9_-]*$/) endfail("spoke name must match [a-z0-9][a-z0-9_-]*: " s)
+    for (j = 1; j <= 4; j++) if (!((s, req[j]) in sp)) endfail("spoke " s " lacks property " req[j])
+    ring = toupper(sp[s, "RING"]); vis = tolower(sp[s, "VISIBILITY"])
+    st = sp[s, "STRIPES"]; rp = sp[s, "REPLICAS"]
+    if (((s, "RING") in sp) && ring !~ /^(GRAIN|GREAT|GRAND)$/) endfail("spoke " s ": RING must be GRAIN, GREAT or GRAND")
+    if (((s, "VISIBILITY") in sp) && vis !~ /^(public|private|sealed)$/) endfail("spoke " s ": VISIBILITY must be public, private or sealed")
+    if (((s, "STRIPES") in sp) && (st !~ /^[0-9]+$/ || st + 0 < 1 || st + 0 > 256)) endfail("spoke " s ": STRIPES must be an integer 1..256")
+    if (((s, "REPLICAS") in sp) && (rp !~ /^[0-9]+$/ || rp + 0 < 1)) endfail("spoke " s ": REPLICAS must be an integer >= 1")
+    nring[s] = ring; nvis[s] = vis; nst[s] = st + 0; nrp[s] = rp + 0
+    if (nm[s] < 1) endfail("spoke " s " has no \"** member HOST\" headings")
+    else if (((s, "REPLICAS") in sp) && rp ~ /^[0-9]+$/ && rp + 0 > nm[s]) endfail("spoke " s ": REPLICAS (" rp ") exceeds the number of members (" nm[s] ")")
+    for (j = 1; j <= nm[s]; j++) {
+      h = order[s, j]
       if (h !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) endfail("bad member name " h)
-      if (!((h, "ROOT") in mp)) endfail("member " h " lacks ROOT")
-      if (!((h, "TRANSPORT") in mp)) endfail("member " h " lacks TRANSPORT")
-      if ((h, "ROOT") in mp) {
-        r = mp[h, "ROOT"]
+      if (!((s, h, "ROOT") in mp)) endfail("member " h " lacks ROOT")
+      if (!((s, h, "TRANSPORT") in mp)) endfail("member " h " lacks TRANSPORT")
+      if ((s, h, "ROOT") in mp) {
+        r = mp[s, h, "ROOT"]
         if (r !~ /^\// || r ~ /[ \t]/) endfail("member " h ": ROOT must be an absolute path without whitespace")
         sub(/\/+$/, "", r)
         if (r == "") endfail("member " h ": ROOT must not be /")
-        mp[h, "ROOT"] = r
+        mp[s, h, "ROOT"] = r
       }
-      if ((h, "TRANSPORT") in mp) {
-        t = tolower(mp[h, "TRANSPORT"])
+      if ((s, h, "TRANSPORT") in mp) {
+        t = tolower(mp[s, h, "TRANSPORT"])
         if (t !~ /^(local|sshfs)$/) endfail("member " h ": TRANSPORT must be local or sshfs")
-        mp[h, "TRANSPORT"] = t
+        mp[s, h, "TRANSPORT"] = t
       }
     }
   }
   if (bad) exit 1
-  printf "spoke\tname\t%s\n", name
-  printf "spoke\tRING\t%s\n", ring
-  printf "spoke\tSTRIPES\t%d\n", st + 0
-  printf "spoke\tREPLICAS\t%d\n", rp + 0
-  printf "spoke\tVISIBILITY\t%s\n", vis
-  for (j = 1; j <= nm; j++) {
-    h = order[j]
-    printf "member\t%s\tROOT\t%s\n", h, mp[h, "ROOT"]
-    printf "member\t%s\tTRANSPORT\t%s\n", h, mp[h, "TRANSPORT"]
+  for (si = 1; si <= nsp; si++) {
+    s = sorder[si]
+    printf "D\t%s\tspoke\tname\t%s\n", s, s
+    printf "D\t%s\tspoke\tRING\t%s\n", s, nring[s]
+    printf "D\t%s\tspoke\tSTRIPES\t%d\n", s, nst[s]
+    printf "D\t%s\tspoke\tREPLICAS\t%d\n", s, nrp[s]
+    printf "D\t%s\tspoke\tVISIBILITY\t%s\n", s, nvis[s]
+    printf "L\t%s\tspoke\theading\t%d\n", s, kl[s, "heading"]
+    split("RING STRIPES REPLICAS VISIBILITY", ks, " ")
+    for (j = 1; j <= 4; j++) printf "L\t%s\tspoke\t%s\t%d\n", s, ks[j], kl[s, ks[j]]
+    for (j = 1; j <= nm[s]; j++) {
+      h = order[s, j]
+      printf "D\t%s\tmember\t%s\tROOT\t%s\n", s, h, mp[s, h, "ROOT"]
+      printf "D\t%s\tmember\t%s\tTRANSPORT\t%s\n", s, h, mp[s, h, "TRANSPORT"]
+      printf "L\t%s\tmember\t%s\theading\t%d\n", s, h, ml[s, h, "heading"]
+      printf "L\t%s\tmember\t%s\tROOT\t%d\n", s, h, ml[s, h, "ROOT"]
+      printf "L\t%s\tmember\t%s\tTRANSPORT\t%d\n", s, h, ml[s, h, "TRANSPORT"]
+    }
   }
 }
 '
 
-parse_into() { # FILE OUT
-  [ -f "$1" ] || die "cannot read declaration: $1"
-  $AWK "$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $1"
-  sort "$TMP/raw" > "$2"
+# options, filled in by main
+O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0
+
+spoke_norm() { # SPOKE -> its data rows in the 0.1.0 shape, sorted bytewise
+  $AWK -F'\t' -v s="$1" '$1=="D"&&$2==s{ l=$3; for(i=4;i<=NF;i++) l=l "\t" $i; print l }' "$TMP/all" | sort
 }
 
 ident_of() { { printf 'orgfs-decl-1\n'; cat "$1"; } | sha_stdin; }
@@ -158,14 +192,47 @@ spoke_val() { $AWK -F'\t' -v k="$1" '$1=="spoke"&&$2==k{print $3}' "$TMP/norm"; 
 member_val() { $AWK -F'\t' -v h="$1" -v k="$2" '$1=="member"&&$2==h&&$3==k{print $4}' "$TMP/norm"; }
 root_of() { member_val "$1" ROOT; }
 tr_of() { member_val "$1" TRANSPORT; }
+spoke_line() { $AWK -F'\t' -v s="$SPOKE" -v k="$1" '$1=="L"&&$2==s&&$3=="spoke"&&$4==k{print $5}' "$TMP/all"; }
+member_line() { $AWK -F'\t' -v s="$SPOKE" -v h="$1" -v k="$2" '$1=="L"&&$2==s&&$3=="member"&&$4==h&&$5==k{print $6}' "$TMP/all"; }
 
-load() { # DECL -> ID SPOKE RING STRIPES REPLICAS VIS MEMBERS
-  parse_into "$1" "$TMP/norm"
+in_list() { # WORD LIST(newline or space separated)
+  printf '%s\n' "$2" | tr ' ' '\n' | $AWK -v w="$1" '$0==w{f=1} END{exit f?0:1}'
+}
+
+load_spoke() { # NAME -> ID SPOKE RING STRIPES REPLICAS VIS MEMBERS
+  SPOKE=$1
+  cp "$TMP/norm.$1" "$TMP/norm"
   ID=$(ident_of "$TMP/norm")
-  SPOKE=$(spoke_val name); RING=$(spoke_val RING)
-  STRIPES=$(spoke_val STRIPES); REPLICAS=$(spoke_val REPLICAS)
+  RING=$(spoke_val RING); STRIPES=$(spoke_val STRIPES); REPLICAS=$(spoke_val REPLICAS)
   VIS=$(spoke_val VISIBILITY)
   MEMBERS=$($AWK -F'\t' '$1=="member"&&$3=="ROOT"{print $2}' "$TMP/norm")
+}
+
+# DECL -> SPOKES NSP FILEID; and, when --spoke names one or the file has just one, that spoke is loaded
+load() {
+  [ -f "$1" ] || die "cannot read declaration: $1"
+  $AWK "$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $1"
+  sort "$TMP/raw" > "$TMP/all"
+  SPOKES=$($AWK -F'\t' '$1=="D"&&$3=="spoke"&&$4=="name"{print $2}' "$TMP/all")
+  NSP=$(printf '%s\n' "$SPOKES" | wc -l | tr -d ' ')
+  : > "$TMP/ids"
+  for _s in $SPOKES; do
+    spoke_norm "$_s" > "$TMP/norm.$_s"
+    ident_of "$TMP/norm.$_s" >> "$TMP/ids"
+  done
+  # the file's identity is made of the spokes' identities, sorted: spoke order cannot matter
+  FILEID=$({ printf 'orgfs-file-1\n'; sort "$TMP/ids"; } | sha_stdin)
+  SPOKE=; ID=; MEMBERS=
+  if [ -n "$O_SPOKE" ]; then
+    in_list "$O_SPOKE" "$SPOKES" || die "$1 has no spoke $O_SPOKE (it has: $(echo $SPOKES))"
+    load_spoke "$O_SPOKE"
+  elif [ "$NSP" = 1 ]; then
+    load_spoke "$SPOKES"
+  fi
+}
+
+need_spoke() { # COMMAND
+  [ -n "$SPOKE" ] || die "$1: this declaration has $NSP spokes ($(echo $SPOKES)); say which with --spoke NAME"
 }
 
 # ------------------------------------------------------------------ mounts
@@ -200,19 +267,9 @@ make_plan() { # -> $TMP/plan, lines: stripe TAB holder holder ...
   done
 }
 holders_of() { $AWK -F'\t' -v i="$1" '$1==i{print $2}' "$TMP/plan"; }
+holds_of() { $AWK -F'\t' -v h="$1" '{ n = split($2, a, " "); for (k = 1; k <= n; k++) if (a[k] == h) printf "%s ", $1 }' "$TMP/plan" | sed 's/ $//'; }
 
-cmd_check() {
-  _decl=${1:-}; [ -n "$_decl" ] || die "check: need DECL"
-  _mounts=1
-  [ "${2:-}" = "--no-mounts" ] && _mounts=0
-  load "$_decl"
-  _bad=0
-  if [ "$_mounts" = 1 ]; then
-    for _h in $MEMBERS; do
-      member_up "$_h" || { printf 'orgfs: member %s: %s\n' "$_h" "$WHY" >&2; _bad=1; }
-    done
-  fi
-  [ "$_bad" = 0 ] || die "check failed: $_decl"
+print_spoke_block() {
   _n=$(printf '%s\n' "$MEMBERS" | wc -l | tr -d ' ')
   printf 'spoke\t%s\n' "$SPOKE"
   printf 'ring\t%s\n' "$RING"
@@ -221,22 +278,39 @@ cmd_check() {
   printf 'visibility\t%s\n' "$VIS"
   printf 'members\t%s\n' "$_n"
   printf 'identity\t%s\n' "$ID"
+}
+
+cmd_check() {
+  _decl=${1:-}; [ -n "$_decl" ] || die "check: need DECL"
+  load "$_decl"
+  _list=$SPOKES; [ -z "$O_SPOKE" ] || _list=$O_SPOKE
+  _bad=0
+  if [ "$O_NOMOUNTS" = 0 ]; then
+    for _s in $_list; do
+      load_spoke "$_s"
+      for _h in $MEMBERS; do
+        member_up "$_h" || { printf 'orgfs: member %s: %s\n' "$_h" "$WHY" >&2; _bad=1; }
+      done
+    done
+  fi
+  [ "$_bad" = 0 ] || die "check failed: $_decl"
+  for _s in $_list; do load_spoke "$_s"; print_spoke_block; done
+  if [ -n "$O_SPOKE" ]; then printf 'file-identity\t(not computed for one spoke; see the spoke identity)\n'
+  else printf 'file-identity\t%s\n' "$FILEID"; fi
   printf 'check: OK\n'
 }
 
 cmd_plan() {
   _decl=${1:-}; [ -n "$_decl" ] || die "plan: need DECL"
-  _as=
-  if [ "${2:-}" = "--as" ]; then _as=${3:-}; [ -n "$_as" ] || die "plan: --as needs HOST"; fi
-  load "$_decl"
-  if [ -n "$_as" ]; then
-    printf '%s\n' "$MEMBERS" | grep -qx -- "$_as" || die "plan: $_as is not a member of $SPOKE"
+  load "$_decl"; need_spoke plan
+  if [ -n "$O_AS" ]; then
+    in_list "$O_AS" "$MEMBERS" || die "plan: $O_AS is not a member of $SPOKE"
   fi
   make_plan
   printf '# spoke %s identity %s\n' "$SPOKE" "$ID"
-  if [ -n "$_as" ]; then
-    printf '# as %s\n' "$_as"
-    $AWK -F'\t' -v h="$_as" '{ n = split($2, a, " "); for (k = 1; k <= n; k++) if (a[k] == h) { gsub(/ /, ",", $2); print $1 "\t" $2 } }' "$TMP/plan"
+  if [ -n "$O_AS" ]; then
+    printf '# as %s\n' "$O_AS"
+    $AWK -F'\t' -v h="$O_AS" '{ n = split($2, a, " "); for (k = 1; k <= n; k++) if (a[k] == h) { gsub(/ /, ",", $2); print $1 "\t" $2 } }' "$TMP/plan"
   else
     $AWK -F'\t' '{ gsub(/ /, ",", $2); print $1 "\t" $2 }' "$TMP/plan"
   fi
@@ -247,15 +321,14 @@ cmd_agree() {
   _first=
   _differ=0
   for _f in "$@"; do
-    parse_into "$_f" "$TMP/agree"
-    _id=$(ident_of "$TMP/agree")
+    load "$_f"
+    if [ -n "$O_SPOKE" ]; then _id=$ID; else _id=$FILEID; fi
     printf '%s  %s\n' "$_id" "$_f"
     if [ -z "$_first" ]; then _first=$_id; elif [ "$_id" != "$_first" ]; then _differ=1; fi
   done
   [ "$_differ" = 0 ] || die "declarations DISAGREE: identities differ"
   printf 'agree: OK (%s declarations, identity %s)\n' "$#" "$_first"
 }
-
 # ------------------------------------------------------------------ slices
 slice_ok() { # FILE SIZE SHA
   [ "$(size_of "$1")" = "$2" ] || return 1
@@ -272,15 +345,15 @@ manifest_ok() {
 manifest_field() { $AWK -F'\t' -v i="$1" -v c="$2" 'NR==i{print $c}' "$TMP/manifest"; }
 
 # 0 ok, 1 no manifest anywhere, 2 manifests disagree or malformed (MFAIL says)
-MFAIL=
-fetch_manifest() { # ID
-  _have=0
+MFAIL=; MSRC=
+fetch_manifest() { # ID  (MSRC: the member whose MANIFEST was read)
+  _have=0; MSRC=
   for _h in $MEMBERS; do
     member_up "$_h" || continue
     _m="$(sdir "$_h" "$1")/MANIFEST"
     [ -f "$_m" ] || continue
     if [ "$_have" = 0 ]; then
-      cp "$_m" "$TMP/manifest"; _have=1; _mh=$_h
+      cp "$_m" "$TMP/manifest"; _have=1; _mh=$_h; MSRC=$_h
     elif ! cmp -s "$_m" "$TMP/manifest"; then
       MFAIL="manifest on $_h differs from the one on $_mh"; return 2
     fi
@@ -292,7 +365,7 @@ fetch_manifest() { # ID
 
 ASM_FAIL=
 assemble() { # ID DEST [q]: any good copy of each slice, from any reachable member
-  : > "$2"
+  : > "$2"; : > "$TMP/asmsrc"
   a_i=1
   while [ "$a_i" -le "$STRIPES" ]; do
     a_size=$(manifest_field "$a_i" 2); a_sha=$(manifest_field "$a_i" 3)
@@ -302,7 +375,7 @@ assemble() { # ID DEST [q]: any good copy of each slice, from any reachable memb
       a_f="$(sdir "$a_h" "$1")/$a_i.of.$STRIPES"
       [ -f "$a_f" ] || continue
       if slice_ok "$a_f" "$a_size" "$a_sha"; then
-        cat "$a_f" >> "$2"; a_ok=1; break
+        cat "$a_f" >> "$2"; a_ok=1; printf "%s\t%s\n" "$a_i" "$a_h" >> "$TMP/asmsrc"; break
       elif [ "${3:-}" != q ]; then
         warn "CORRUPT slice $a_i.of.$STRIPES on $a_h does not match the manifest (size or sha256)"
       fi
@@ -315,7 +388,7 @@ assemble() { # ID DEST [q]: any good copy of each slice, from any reachable memb
 cmd_put() {
   _decl=${1:-}; _file=${2:-}
   [ -n "$_decl" ] && [ -n "$_file" ] || die "put: need DECL FILE"
-  load "$_decl"
+  load "$_decl"; need_spoke put
   [ "$VIS" != sealed ] || die "put: VISIBILITY sealed needs encryption, which orgfs does not have yet; refusing"
   [ -f "$_file" ] || die "put: cannot read $_file"
   for _h in $MEMBERS; do
@@ -355,7 +428,7 @@ cmd_get() {
   [ -n "$_decl" ] && [ -n "$_id" ] && [ -n "$_out" ] || die "get: need DECL ID OUT"
   case $_id in *[!0-9a-f]*) die "get: ID must be 64 lowercase hex digits";; esac
   [ "${#_id}" = 64 ] || die "get: ID must be 64 lowercase hex digits"
-  load "$_decl"
+  load "$_decl"; need_spoke get
   for _h in $MEMBERS; do
     member_up "$_h" || warn "member $_h unavailable ($WHY); using the others"
   done
@@ -400,14 +473,14 @@ verify_object() { # ID -> prints OK/FAIL lines, status 0/1
 
 cmd_verify() {
   _decl=${1:-}; [ -n "$_decl" ] || die "verify: need DECL"
-  load "$_decl"
+  load "$_decl"; need_spoke verify
   make_plan
-  : > "$TMP/ids"
+  : > "$TMP/objs"
   for _h in $MEMBERS; do
     member_up "$_h" || { warn "member $_h unavailable ($WHY)"; continue; }
-    ls "$(root_of "$_h")/.orgfs/$SPOKE" 2>/dev/null >> "$TMP/ids"
+    ls "$(root_of "$_h")/.orgfs/$SPOKE" 2>/dev/null >> "$TMP/objs"
   done
-  _ids=$(grep -E '^[0-9a-f]{64}$' "$TMP/ids" | sort -u)
+  _ids=$(grep -E '^[0-9a-f]{64}$' "$TMP/objs" | sort -u)
   [ -n "$_ids" ] || { echo "verify: no objects in spoke $SPOKE"; return 0; }
   _fail=0; _n=0
   for _o in $_ids; do
@@ -417,6 +490,448 @@ cmd_verify() {
   if [ "$_fail" = 0 ]; then echo "verify: OK ($_n objects)"; else echo "verify: FAIL"; return 1; fi
 }
 
+
+# ------------------------------------------------------------------ gaps
+# A view never just drops something.  Wherever it leaves something out it writes
+# a gap record: WHAT is missing (kind and shape, never content) and HOW and WHY it
+# is missing, which line of the declaration states the rule, who could reach it,
+# and the routes that would fill it.  GAPS_AWK reads any view and refuses a gap
+# record that lacks one of those parts.
+GAPS_AWK='
+function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+function endgap(   i, ok) {
+  if (!ing) return
+  ing = 0; indr = 0; ok = 1; ngaps++
+  for (i = 1; i <= nreq; i++) if (got[req[i]] == "") { printf "orgfs: gap %s lacks %s\n", gid, req[i] > "/dev/stderr"; ok = 0 }
+  if (nroute < 1) { printf "orgfs: gap %s has no route that would fill it\n", gid > "/dev/stderr"; ok = 0 }
+  if (!ok) { bad = 1; return }
+  if (mode == "tsv") printf "%s\t%s\t%s\t%s\t%s\t%s\n", gid, got["WHAT_KIND"], got["WHAT_SHAPE"], got["RULE"], got["RULE_AT"], got["REACH"]
+  if (mode == "list") {
+    printf "gap %s (kind %s): %s\n", gid, got["WHAT_KIND"], got["WHAT_SHAPE"]
+    printf "  rule: %s\n  declared at: %s\n  how: %s\n  why: %s\n  reach: %s\n", got["RULE"], got["RULE_AT"], got["HOW"], got["WHY"], got["REACH"]
+    for (i = 1; i <= nroute; i++) printf "  fill by: %s\n", routes[i]
+  }
+}
+BEGIN { nreq = split("GAP_ID WHAT_KIND WHAT_SHAPE RULE RULE_AT HOW WHY REACH", req, " "); ing = 0; indr = 0; bad = 0; ngaps = 0 }
+/^\*+ gap / { endgap(); ing = 1; indr = 0; gid = $0; sub(/^\*+ gap /, "", gid); split("", got); split("", routes); nroute = 0; next }
+ing && /^\*+ / { endgap() }
+ing && /^:PROPERTIES:/ { indr = 1; next }
+ing && /^:END:/ { endgap(); next }
+ing && indr && match($0, /^:[A-Z_]+:/) {
+  k = substr($0, 2, RLENGTH - 2); v = trim(substr($0, RLENGTH + 1))
+  if (k == "ROUTE") { nroute++; routes[nroute] = v } else got[k] = v
+  next
+}
+END { endgap(); if (mode == "list" && !bad) printf "routes: %d gaps, each with a rule, a declaring line, a reach and at least one route\n", ngaps; exit bad }
+'
+
+gap_open() { # LEVEL ID KIND SHAPE RULE RULE_AT HOW WHY REACH
+  printf '%s gap %s\n:PROPERTIES:\n:ROLE: gap\n:GAP_ID: %s\n:WHAT_KIND: %s\n:WHAT_SHAPE: %s\n:RULE: %s\n:RULE_AT: %s\n:HOW: %s\n:WHY: %s\n:REACH: %s\n' \
+    "$1" "$2" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9"
+}
+gap_route() { printf ':ROUTE: %s\n' "$1"; }
+gap_close() { printf ':END:\n'; }
+
+is_member() { in_list "$VHOST" "$MEMBERS"; }
+at_spoke() { printf 'line %s (:%s:)' "$(spoke_line "$1")" "$1"; }
+n_members() { printf '%s\n' "$MEMBERS" | wc -l | tr -d ' '; }
+
+# who could reach what a gap stands for, and by which routes
+reach_text() {
+  rt_m=$(echo $MEMBERS)
+  case $VIS in
+    sealed) if is_member; then printf '%s' "$rt_m"; else printf 'members of spoke %s (names withheld: sealed)' "$SPOKE"; fi;;
+    public) printf '%s; any host that mounts their ROOT paths (VISIBILITY public)' "$rt_m";;
+    *) printf '%s' "$rt_m";;
+  esac
+}
+routes_for() { # VERB TAIL
+  if [ "$VIS" = sealed ] && ! is_member; then
+    gap_route "on a member of spoke $SPOKE: orgfs $1 DECL --as MEMBER $2"
+    return 0
+  fi
+  for rf_m in $MEMBERS; do gap_route "on $rf_m: orgfs $1 DECL --as $rf_m $2"; done
+  [ "$VIS" != public ] || gap_route "on any host that mounts the ROOT paths: orgfs $1 DECL --as THAT_HOST $2"
+  return 0
+}
+
+gap_spoke_grain() {
+  gap_open '*' "$SPOKE/grain" spoke "1 spoke, $(n_members) members" \
+    "assemble and materialize gather only the grain asked for" \
+    "not in the declaration: the command line named --spoke $G_SPOKE" \
+    "the spoke was left out of this collection" \
+    "a narrower grain was asked for; the declaration withholds nothing by this" "$(reach_text)"
+  routes_for "$VERB" "--spoke $SPOKE${G_INTO:+ --into DIR}"
+  gap_close
+}
+
+gap_sealed() {
+  gap_open '*' "$SPOKE/sealed" spoke "1 spoke, $(n_members) members" \
+    "VISIBILITY sealed: a non-member is told the spoke exists and what it is called, nothing more" \
+    "$(at_spoke VISIBILITY)" \
+    "$VERB left the whole spoke out of this view: its properties, member names, roots and objects" \
+    "the spoke is sealed and $VHOST is not one of its members" "$(reach_text)"
+  routes_for "$VERB" "--spoke $SPOKE"
+  gap_close
+}
+
+gap_member_root() { # HOST
+  gm_n=$(root_of "$1" | $AWK -F/ '{print NF - 1}')
+  gap_open '**' "$SPOKE/member-root/$1" member-root "1 absolute path, $gm_n components" \
+    "VISIBILITY private: a non-member sees who the members are, not where they keep their slices" \
+    "$(at_spoke VISIBILITY); withheld field declared at line $(member_line "$1" ROOT) (:ROOT:)" \
+    "$VERB left the :ROOT: property of member $1 out of this view" \
+    "the spoke is private and $VHOST is not one of its members" "$(reach_text)"
+  routes_for materialize "--spoke $SPOKE"
+  gap_close
+}
+
+gap_objects_hidden() {
+  gap_open '**' "$SPOKE/objects" objects "unknown number of objects with their manifests; the store is not read" \
+    "VISIBILITY private: only members read a private spoke's store" \
+    "$(at_spoke VISIBILITY)" \
+    "$VERB did not read the stores of spoke $SPOKE for this host" \
+    "the spoke is private and $VHOST is not one of its members" "$(reach_text)"
+  routes_for assemble "--spoke $SPOKE --into DIR"
+  gap_close
+}
+
+gap_member_store() { # HOST WHY
+  gap_open '**' "$SPOKE/member-store/$1" member-store "1 store: the .orgfs tree under one ROOT" \
+    "a member's store is read only if its ROOT is a directory, and a mount point for TRANSPORT sshfs" \
+    "line $(member_line "$1" ROOT) (:ROOT:), line $(member_line "$1" TRANSPORT) (:TRANSPORT:)" \
+    "$VERB could not read the store of member $1: $2" \
+    "the store is not reachable from the machine that built this view" \
+    "$1; any host that has $1's ROOT mounted at the same path"
+  gap_route "on $1: orgfs $VERB DECL --as $VHOST --spoke $SPOKE${G_INTO:+ --into DIR}"
+  gap_route "on any host where $1's ROOT is mounted at the same path: orgfs $VERB DECL --as $VHOST --spoke $SPOKE${G_INTO:+ --into DIR}"
+  gap_close
+}
+
+gap_object_grain() { # OBJECT
+  gap_open '**' "$SPOKE/object-grain/$1" object "1 object" \
+    "assemble and materialize gather only the grain asked for" \
+    "not in the declaration: the command line named --object $G_OBJECT" \
+    "the object was left out of this collection" \
+    "a narrower grain was asked for; the declaration withholds nothing by this" "$(reach_text)"
+  routes_for "$VERB" "--spoke $SPOKE --object $1${G_INTO:+ --into DIR}"
+  gap_close
+}
+
+gap_manifest() { # OBJECT WHY
+  gap_open '**' "$SPOKE/manifest/$1" manifest "1 MANIFEST of $STRIPES rows" \
+    "an object is shown only if one MANIFEST exists and every reachable member holds the same one" \
+    "$(at_spoke STRIPES)" \
+    "$VERB left object $1 out: $2" \
+    "the manifest could not be fetched in a form every reachable member agrees on" "$(reach_text)"
+  routes_for verify "--spoke $SPOKE"
+  gap_close
+}
+
+gap_backlink() { # LEVEL OBJECT MEMBER
+  gap_open "$1" "$SPOKE/backlink/$2/$3" backlink "1 record: one line in a MATERIALIZED file" \
+    "the source side keeps a record of which hosts materialized an object" \
+    "line $(member_line "$3" ROOT) (:ROOT:)" \
+    "$VERB could not write the record on member $3: its store directory for the object is not writable from here" \
+    "the view links to this source one way only until the record exists" "$3; any host that can write $3's store"
+  gap_route "on $3: orgfs $VERB DECL --as $VHOST --spoke $SPOKE --object $2${G_INTO:+ --into DIR}"
+  gap_close
+}
+
+gap_slice_bytes() { # OBJECT STRIPE SIZE HOLDERS HELD WHYEXTRA
+  gs_id="$STRIPES"
+  if [ "$5" = yes ]; then
+    gs_rule="a view carries manifest rows, never slice bytes"
+    gs_at="not in the declaration: a rule of orgfs materialize (README, Views)"
+    gs_why="a view is a record of where things are; bytes travel by assemble or get${6:+; $6}"
+  else
+    gs_rule="rendezvous plan: only the REPLICAS highest-scoring members hold a stripe"
+    gs_at="line $(spoke_line STRIPES) (:STRIPES:), line $(spoke_line REPLICAS) (:REPLICAS:)"
+    gs_why="$VHOST holds no copy of stripe $2 under the plan, and a view carries no bytes either way${6:+; $6}"
+  fi
+  gap_open '****' "$SPOKE/slice-bytes/$1/$2.of.$STRIPES" slice-bytes "1 slice, $3 bytes" \
+    "$gs_rule" "$gs_at" \
+    "$VERB left the bytes of slice $2.of.$STRIPES out of this view" "$gs_why" "$4"
+  for gs_h in $4; do gap_route "on $gs_h: orgfs assemble DECL --as $gs_h --spoke $SPOKE --object $1 --into DIR"; done
+  gap_close
+}
+
+# ------------------------------------------------------------------ views
+list_objects() { # -> $TMP/objs2 (sorted ids), $TMP/downs (host TAB why)
+  : > "$TMP/objs"; : > "$TMP/downs"
+  for lo_h in $MEMBERS; do
+    if member_up "$lo_h"; then
+      ls "$(root_of "$lo_h")/.orgfs/$SPOKE" 2>/dev/null >> "$TMP/objs"
+    else
+      printf '%s\t%s\n' "$lo_h" "$WHY" >> "$TMP/downs"
+    fi
+  done
+  grep -E '^[0-9a-f]{64}$' "$TMP/objs" | sort -u > "$TMP/objs2"
+}
+
+view_object() { # ID
+  vo=$1
+  fetch_manifest "$vo"; vo_rc=$?
+  if [ "$vo_rc" = 1 ]; then gap_manifest "$vo" "no MANIFEST for it on any reachable member"; return 0; fi
+  if [ "$vo_rc" = 2 ]; then gap_manifest "$vo" "$MFAIL"; return 0; fi
+  vo_msrc=$MSRC
+  vo_mdir=$(sdir "$vo_msrc" "$vo")
+  vo_total=$($AWK -F'\t' '{ s += $2 } END { print s + 0 }' "$TMP/manifest")
+  vo_bytes=0; vo_extra=
+  if [ -n "$G_INTO" ]; then
+    if assemble "$vo" "$TMP/obytes" q && whole_ok "$TMP/obytes" "$vo"; then
+      mkdir -p "$G_INTO/$SPOKE" && cp "$TMP/obytes" "$G_INTO/$SPOKE/$vo" || die "$VERB: cannot write $G_INTO/$SPOKE/$vo"
+      vo_bytes=1
+    else
+      vo_extra="assemble could not rebuild the object: ${ASM_FAIL:-the bytes do not hash to the ID}"
+    fi
+  fi
+  # the members this object's items come from: where the manifest was read, and where bytes were
+  : > "$TMP/bl"; : > "$TMP/blgap"
+  { printf '%s\n' "$vo_msrc"; [ "$vo_bytes" = 0 ] || cut -f2 "$TMP/asmsrc"; } | sort -u > "$TMP/srcm"
+  for vo_m in $(cat "$TMP/srcm"); do
+    vo_d=$(sdir "$vo_m" "$vo")
+    if [ -d "$vo_d" ] && [ -w "$vo_d" ]; then
+      printf ':BACKLINK: %s/MATERIALIZED\n' "$vo_d" >> "$TMP/bl"
+      printf '%s\t%s\t%s\t%s\n' "$vo_d" "$vo_m" "$SPOKE" "$vo" >> "$TMP/srcs"
+    else
+      printf '%s\n' "$vo_m" >> "$TMP/blgap"
+    fi
+  done
+  printf '** object %s\n:PROPERTIES:\n:ROLE: fetched\n:SOURCE_SPOKE: %s\n:SOURCE_OBJECT: %s\n:SOURCE_MEMBER: %s\n:SOURCE_PATH: %s/MANIFEST\n:SIZE: %s\n:SLICES: %s\n' \
+    "$vo" "$SPOKE" "$vo" "$vo_msrc" "$vo_mdir" "$vo_total" "$STRIPES"
+  [ "$vo_bytes" = 0 ] || printf ':BYTES_AT: %s/%s/%s\n' "$G_INTO" "$SPOKE" "$vo"
+  cat "$TMP/bl"
+  printf ':END:\n'
+  for vo_m in $(cat "$TMP/blgap"); do gap_backlink '***' "$vo" "$vo_m"; done
+  vo_i=1
+  while [ "$vo_i" -le "$STRIPES" ]; do
+    vo_size=$(manifest_field "$vo_i" 2); vo_sha=$(manifest_field "$vo_i" 3)
+    vo_hold=$(holders_of "$vo_i" | tr '\n' ' ' | sed 's/ $//')
+    if in_list "$VHOST" "$vo_hold"; then vo_held=yes; else vo_held=no; fi
+    if [ "$vo_bytes" = 1 ]; then
+      vo_sm=$($AWK -F'\t' -v i="$vo_i" '$1==i{print $2}' "$TMP/asmsrc")
+      vo_sp="$(sdir "$vo_sm" "$vo")/$vo_i.of.$STRIPES"
+    else
+      vo_sm=$vo_msrc; vo_sp="$vo_mdir/MANIFEST"
+    fi
+    printf '*** slice %s.of.%s\n:PROPERTIES:\n:ROLE: fetched\n:SOURCE_SPOKE: %s\n:SOURCE_OBJECT: %s\n:SOURCE_SLICE: %s.of.%s\n:SOURCE_MEMBER: %s\n:SOURCE_PATH: %s\n:SIZE: %s\n:SHA256: %s\n:HOLDERS: %s\n:HELD_HERE: %s\n:END:\n' \
+      "$vo_i" "$STRIPES" "$SPOKE" "$vo" "$vo_i" "$STRIPES" "$vo_sm" "$vo_sp" "$vo_size" "$vo_sha" "$vo_hold" "$vo_held"
+    [ "$vo_bytes" = 1 ] || gap_slice_bytes "$vo" "$vo_i" "$vo_size" "$vo_hold" "$vo_held" "$vo_extra"
+    vo_i=$((vo_i + 1))
+  done
+}
+
+view_spoke() {
+  if [ -n "$G_SPOKE" ] && [ "$G_SPOKE" != "$SPOKE" ]; then gap_spoke_grain; return 0; fi
+  if is_member; then vs_acc=member; elif [ "$VIS" = public ]; then vs_acc=read; else vs_acc=none; fi
+  if [ "$VIS" = sealed ] && [ "$vs_acc" != member ]; then gap_sealed; return 0; fi
+  make_plan
+  printf '* spoke %s\n:PROPERTIES:\n:ROLE: displayed\n:SPOKE_ID: %s\n:RING: %s\n:STRIPES: %s\n:REPLICAS: %s\n:VISIBILITY: %s\n:ACCESS: %s\n:END:\n' \
+    "$SPOKE" "$ID" "$RING" "$STRIPES" "$REPLICAS" "$VIS" "$vs_acc"
+  for vs_h in $MEMBERS; do
+    printf '** member %s\n:PROPERTIES:\n:ROLE: displayed\n:TRANSPORT: %s\n' "$vs_h" "$(tr_of "$vs_h")"
+    [ "$vs_acc" = none ] || printf ':ROOT: %s\n' "$(root_of "$vs_h")"
+    printf ':HOLDS: %s\n:END:\n' "$(holds_of "$vs_h")"
+    [ "$vs_acc" != none ] || gap_member_root "$vs_h"
+  done
+  if [ "$vs_acc" = none ]; then gap_objects_hidden; return 0; fi
+  list_objects
+  while IFS="$TAB" read -r vs_dh vs_dw; do
+    [ -z "$vs_dh" ] || gap_member_store "$vs_dh" "$vs_dw"
+  done < "$TMP/downs"
+  if [ -n "$G_OBJECT" ] && [ "$SPOKE" = "$G_OBJSPOKE" ]; then
+    grep -qx -- "$G_OBJECT" "$TMP/objs2" || die "$VERB: object $G_OBJECT is not stored in spoke $SPOKE on any reachable member"
+  fi
+  for vs_o in $(cat "$TMP/objs2"); do
+    if [ -n "$G_OBJECT" ] && [ "$SPOKE" = "$G_OBJSPOKE" ] && [ "$vs_o" != "$G_OBJECT" ]; then
+      gap_object_grain "$vs_o"
+    else
+      view_object "$vs_o"
+    fi
+  done
+}
+
+TAB=$(printf '\t')
+
+make_view() { # -> $TMP/view  (and the records on the source side)
+  : > "$TMP/srcs"
+  if [ -n "$G_OBJECT" ]; then vm_grain="object $G_OBJECT in spoke $G_OBJSPOKE"
+  elif [ -n "$G_SPOKE" ]; then vm_grain="spoke $G_SPOKE"
+  else vm_grain="all spokes"; fi
+  case $VERB in materialize) vm_kind=materialized;; *) vm_kind=assembled;; esac
+  {
+    printf '#+TITLE: orgfs view of a declaration, as %s\n' "$VHOST"
+    printf '* view\n:PROPERTIES:\n:KIND: %s\n:AS: %s\n:ORGFS: %s\n:FILE_ID: %s\n:GRAIN: %s\n:SPOKES: %s\n:END:\n' \
+      "$vm_kind" "$VHOST" "$VERSION" "$FILEID" "$vm_grain" "$NSP"
+    for vm_s in $SPOKES; do load_spoke "$vm_s"; view_spoke; done
+  } > "$TMP/view.body"
+  $AWK -v mode=check "$GAPS_AWK" "$TMP/view.body" || die "$VERB: refusing to emit a view with an incomplete gap record"
+  VIEWID=$(sha_file "$TMP/view.body")
+  { cat "$TMP/view.body"; printf '# view-id: %s\n' "$VIEWID"; } > "$TMP/view"
+  # the source side learns who materialized it (idempotent: same view, same line)
+  sort -u "$TMP/srcs" > "$TMP/srcs2"
+  while IFS="$TAB" read -r vm_d vm_m vm_sp vm_o; do
+    [ -n "$vm_d" ] || continue
+    vm_row="$VIEWID$TAB$VHOST$TAB$vm_kind$TAB$FILEID$TAB$vm_sp$TAB$vm_o"
+    grep -qxF -- "$vm_row" "$vm_d/MATERIALIZED" 2>/dev/null || printf '%s\n' "$vm_row" >> "$vm_d/MATERIALIZED" \
+      || die "$VERB: cannot write the record on member $vm_m"
+  done < "$TMP/srcs2"
+}
+
+cmd_view() { # VERB DECL...
+  VERB=$1; shift
+  _decl=${1:-}; [ -n "$_decl" ] || die "$VERB: need DECL"
+  [ -n "$O_AS" ] || die "$VERB: need --as HOST"
+  case $O_AS in *[!A-Za-z0-9._-]*|[!A-Za-z0-9]*) die "$VERB: bad host name: $O_AS";; esac
+  VHOST=$O_AS
+  G_INTO=
+  if [ "$VERB" = assemble ]; then
+    [ -n "$O_INTO" ] || die "assemble: need --into DIR (where the bytes go)"
+    mkdir -p "$O_INTO" || die "assemble: cannot create $O_INTO"
+    G_INTO=$(cd "$O_INTO" && pwd)
+  else
+    [ -z "$O_INTO" ] || die "materialize carries no bytes; use assemble --into DIR"
+  fi
+  load "$_decl"
+  G_SPOKE=$O_SPOKE; G_OBJECT=$O_OBJECT; G_OBJSPOKE=
+  if [ -n "$G_OBJECT" ]; then
+    case $G_OBJECT in *[!0-9a-f]*) die "$VERB: --object must be 64 lowercase hex digits";; esac
+    [ "${#G_OBJECT}" = 64 ] || die "$VERB: --object must be 64 lowercase hex digits"
+    if [ -n "$O_SPOKE" ]; then G_OBJSPOKE=$O_SPOKE
+    elif [ "$NSP" = 1 ]; then G_OBJSPOKE=$SPOKES
+    else die "$VERB: --object needs --spoke when the declaration holds several spokes ($(echo $SPOKES))"; fi
+  fi
+  make_view
+  _gaps=$($AWK '/^\*+ gap /{ n++ } END { print n + 0 }' "$TMP/view")
+  if [ -n "$O_OUT" ]; then
+    cp "$TMP/view" "$O_OUT" || die "$VERB: cannot write $O_OUT"
+    printf '%s: wrote %s (view-id %s; %s gap records)\n' "$VERB" "$O_OUT" "$VIEWID" "$_gaps"
+  else
+    cat "$TMP/view"
+  fi
+}
+
+cmd_routes() {
+  _v=${1:-}; [ -f "$_v" ] || die "routes: need a view file"
+  $AWK -v mode=list "$GAPS_AWK" "$_v" || die "routes: $_v holds an incomplete gap record"
+}
+
+trace_view() {
+  _v=${1:-}; [ -f "$_v" ] || die "trace: need a view file (or DECL with --object ID)"
+  _last=$(tail -n 1 "$_v")
+  case $_last in "# view-id: "*) ;; *) die "trace: $_v has no view-id trailer";; esac
+  _vid=${_last#"# view-id: "}
+  _calc=$(sed '$d' "$_v" | sha_stdin)
+  _bad=0
+  if [ "$_calc" != "$_vid" ]; then
+    echo "BROKEN  the text does not hash to its own view-id $_vid (edited since it was made?)"; _bad=1
+  fi
+  _host=$($AWK '/^:AS: /{ sub(/^:AS: /, ""); print; exit }' "$_v")
+  grep '^:BACKLINK: ' "$_v" | sed 's/^:BACKLINK: //' | sort -u > "$TMP/bls"
+  _n=0
+  for _p in $(cat "$TMP/bls"); do
+    _n=$((_n + 1))
+    if [ -f "$_p" ] && $AWK -F'\t' -v v="$_vid" -v h="$_host" '$1==v&&$2==h{f=1} END{exit f?0:1}' "$_p"; then
+      echo "linked  $_p lists view $_vid as host $_host"
+    else
+      echo "BROKEN  $_p does not list view $_vid for host $_host"; _bad=1
+    fi
+  done
+  if [ "$_bad" = 0 ]; then echo "trace: OK ($_n source records)"; else echo "trace: FAIL"; return 1; fi
+}
+
+trace_object() {
+  _decl=${1:-}; [ -n "$_decl" ] || die "trace: need DECL"
+  case $O_OBJECT in *[!0-9a-f]*) die "trace: --object must be 64 lowercase hex digits";; esac
+  [ "${#O_OBJECT}" = 64 ] || die "trace: --object must be 64 lowercase hex digits"
+  load "$_decl"; need_spoke trace
+  _n=0
+  for _h in $MEMBERS; do
+    member_up "$_h" || { warn "member $_h unavailable ($WHY)"; continue; }
+    _f="$(sdir "$_h" "$O_OBJECT")/MATERIALIZED"
+    [ -f "$_f" ] || continue
+    $AWK -F'\t' -v m="$_h" '{ printf "view %s  as %s  (%s, file %s)  recorded on %s\n", $1, $2, $3, $4, m }' "$_f"
+    _n=$((_n + $(wc -l < "$_f" | tr -d ' ')))
+  done
+  echo "trace: $_n record(s) for object $O_OBJECT in spoke $SPOKE"
+}
+
+cmd_trace() {
+  if [ -n "$O_OBJECT" ]; then trace_object "$@"; else trace_view "$@"; fi
+}
+
+# ------------------------------------------------------------------ layout
+LAY_HELD=0; LAY_BAD=0; LAY_NC=0
+lay() { # STATE RULE DETAIL
+  printf '%s\t%s\t%s\n' "$1" "$2" "$3"
+  case $1 in
+    held) LAY_HELD=$((LAY_HELD + 1));;
+    broken) LAY_BAD=$((LAY_BAD + 1));;
+    *) LAY_NC=$((LAY_NC + 1));;
+  esac
+}
+
+lay_owner() { # RULE PATH
+  lo_ids=$(ls -ldn "$2/." 2>/dev/null | $AWK '{ print $3 " " $4 }')
+  [ -n "$lo_ids" ] || { lay "not checked" "$1" "cannot read the owner of $2"; return 0; }
+  lo_u=${lo_ids% *}; lo_g=${lo_ids#* }
+  if [ "$lo_u" = 0 ]; then lay held "$1" "$2 is owned by root"; return 0; fi
+  lo_cg=; lo_hg=
+  if [ -r "$LAY_P/etc/passwd" ]; then
+    lo_cg=$($AWK -F: '$1=="c4"{ print $4; exit }' "$LAY_P/etc/passwd")
+    [ -z "$LAY_HN" ] || lo_hg=$($AWK -F: -v n="$LAY_HN" '$1==n{ print $4; exit }' "$LAY_P/etc/passwd")
+  fi
+  if [ -n "$lo_cg" ] && [ "$lo_g" = "$lo_cg" ]; then
+    lay held "$1" "$2 belongs to group $lo_g, the primary group of account c4"
+  elif [ -n "$lo_hg" ] && [ "$lo_g" = "$lo_hg" ]; then
+    lay held "$1" "$2 belongs to group $lo_g, the primary group of account $LAY_HN"
+  else
+    lay broken "$1" "$2 is owned by uid $lo_u gid $lo_g; it should belong to root, or to the primary group of account c4${LAY_HN:+ or of account $LAY_HN} (found: c4 group ${lo_cg:-none}, host-account group ${lo_hg:-none})"
+  fi
+}
+
+cmd_layout() {
+  LAY_P=${O_ROOT%/}
+  LAY_HN=${ORGFS_HOSTNAME:-}
+  [ -n "$LAY_HN" ] || { [ -r "$LAY_P/etc/hostname" ] && LAY_HN=$(head -n 1 "$LAY_P/etc/hostname" | tr -d ' \r'); }
+  [ -n "$LAY_HN" ] || LAY_HN=$(hostname 2>/dev/null || true)
+  LAY_HN=${LAY_HN%%.*}
+  case $LAY_HN in
+    [a-z][a-z][0-9][0-9]) lay_note="follows the gwNN pattern (two letters, two digits)";;
+    '') lay_note="not known";;
+    *) lay_note="its own identifier; it follows no gwNN pattern, which is allowed and is not a fault";;
+  esac
+  printf '# layout of %s (host name: %s; %s)\n' "${LAY_P:-/}" "${LAY_HN:-unknown}" "$lay_note"
+  if [ -d "$LAY_P/c4" ]; then lay held c4-present "/c4 is a directory (it seats the host's principal registry)"
+  else lay broken c4-present "/c4 is not a directory here (it should seat the host's principal registry)"; fi
+  if [ -d "$LAY_P/spokes" ]; then lay held spokes-present "/spokes is a directory (it seats every cross-mounted spoke)"
+  else lay broken spokes-present "/spokes is not a directory here (it should seat every cross-mounted spoke)"; fi
+  if [ -d "$LAY_P/c4" ]; then lay_owner c4-owner "$LAY_P/c4"
+  else lay "not checked" c4-owner "/c4 does not exist, so its owner cannot be read"; fi
+  if [ -d "$LAY_P/etc/c4" ]; then lay_owner etc-c4-owner "$LAY_P/etc/c4"
+  else lay "not checked" etc-c4-owner "/etc/c4 does not exist; the rule applies where it exists"; fi
+  if [ -z "$O_DECL" ]; then
+    lay "not checked" spokes-roots "no --decl given; this rule reads the sshfs members' ROOT paths from a declaration"
+  else
+    load "$O_DECL"
+    lr_bad=0; lr_n=0
+    for lr_s in $SPOKES; do
+      load_spoke "$lr_s"
+      for lr_h in $MEMBERS; do
+        [ "$(tr_of "$lr_h")" = sshfs ] || continue
+        lr_n=$((lr_n + 1))
+        case $(root_of "$lr_h") in
+          /spokes/*) ;;
+          *) lay broken spokes-roots "spoke $SPOKE member $lr_h: sshfs ROOT $(root_of "$lr_h") is not under /spokes"; lr_bad=1;;
+        esac
+      done
+    done
+    [ "$lr_bad" = 1 ] || lay held spokes-roots "all $lr_n sshfs ROOT paths in $O_DECL are under /spokes"
+  fi
+  printf 'layout: %s held, %s broken, %s not checked\n' "$LAY_HELD" "$LAY_BAD" "$LAY_NC"
+  [ "$LAY_BAD" = 0 ]
+}
 # ------------------------------------------------------------------ register
 REGISTER_TXT_AWK='
 BEGIN { FS = "\t" }
@@ -432,35 +947,85 @@ esc_s() { printf '%s' "$1" | esc; }
 cur() { [ "$1" = "$2" ] && printf ' aria-current="page"'; return 0; }
 
 write_css() {
-  cat > "$1" <<'EOF'
-:root { color-scheme: light dark; --bg: #ffffff; --fg: #111111; --mut: #444444; --link: #0b3d91; --rule: #767676; --band: #f0f0f0; }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #121212; --fg: #eeeeee; --mut: #c4c4c4; --link: #9ec1ff; --rule: #8a8a8a; --band: #1e1e1e; }
+  cat > "$1" <<'CSS'
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --fg: #111111; --mut: #4a4a4a; --link: #0b3d91; --visited: #5b2a86;
+  --rule: #6b6b6b; --band: #f0f0f0;
+  --measure: 66ch; --sp: 1.6rem;
+  --s-1: 0.875rem; --s0: 1rem; --s1: 1.2rem; --s2: 1.44rem; --s3: 1.728rem; --s4: 2.074rem;
 }
-html { font-size: 100%; }
-body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; line-height: 1.55; margin: 0 auto; max-width: 72ch; padding: 0 1rem 3rem; }
-a { color: var(--link); }
-a:focus-visible, .scroll:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --fg: #eeeeee; --mut: #c4c4c4; --link: #9ec1ff; --visited: #d4b8ff; --rule: #8a8a8a; --band: #1e1e1e; }
+}
+html { font-size: 100%; -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: var(--s0); line-height: 1.6;
+  margin: 0 auto; max-width: 60rem; padding: 0 1.25rem 4rem;
+}
+main > * { max-width: var(--measure); }
+main > .scroll, main > .wide { max-width: none; }
+p, ul, ol, dl, blockquote, pre { margin: 0 0 var(--sp); }
+li { margin: 0 0 .4rem; }
+a { color: var(--link); text-underline-offset: .15em; }
+a:visited { color: var(--visited); }
+a:focus-visible, .scroll:focus-visible, pre:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
 .skip { position: absolute; left: -999px; }
-.skip:focus { left: 1rem; top: 1rem; background: var(--bg); padding: .5rem; }
-header { border-bottom: 2px solid var(--rule); padding: 1rem 0 .5rem; }
-.brand { font-size: 1.6rem; font-weight: 700; margin: 0; }
-nav ul { list-style: none; margin: .5rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
+.skip:focus { left: 1rem; top: 1rem; background: var(--bg); border: 2px solid var(--fg); padding: .5rem .75rem; z-index: 1; }
+header { border-bottom: 2px solid var(--rule); padding: 1.25rem 0 .75rem; margin-bottom: var(--sp); }
+.brand { font-size: var(--s3); font-weight: 700; line-height: 1.2; margin: 0; letter-spacing: -.01em; }
+nav ul { list-style: none; margin: .6rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
+nav li { margin: 0; }
+nav a { display: inline-block; padding: .25rem 0; }
 nav a[aria-current="page"] { font-weight: 700; text-decoration: none; border-bottom: 3px solid currentColor; }
-h1 { font-size: 1.7rem; line-height: 1.2; }
-h2 { font-size: 1.3rem; margin-top: 2rem; }
-pre { background: var(--band); border: 1px solid var(--rule); padding: .75rem; overflow-x: auto; white-space: pre; }
-code { font-family: ui-monospace, monospace; }
-.scroll { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; }
-caption { text-align: left; font-weight: 700; padding: .25rem 0; }
-th, td { border: 1px solid var(--rule); padding: .35rem .5rem; text-align: left; vertical-align: top; }
-thead th { background: var(--band); }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
+h1 { font-size: var(--s4); line-height: 1.15; margin: calc(var(--sp) * 1.25) 0 var(--sp); letter-spacing: -.01em; }
+h2 { font-size: var(--s2); line-height: 1.25; margin: calc(var(--sp) * 2) 0 calc(var(--sp) * .5); padding-top: calc(var(--sp) * .5); border-top: 1px solid var(--rule); }
+h3 { font-size: var(--s1); line-height: 1.3; margin: var(--sp) 0 .4rem; }
+code, pre { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: .92em; }
+code { overflow-wrap: anywhere; }
+pre { background: var(--band); border: 1px solid var(--rule); border-left-width: 6px; padding: .75rem 1rem; overflow-x: auto; white-space: pre; line-height: 1.45; }
+.status { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: var(--s-1); background: var(--band); border-left: 6px solid var(--fg); padding: .6rem .9rem; }
+.tag { display: inline-block; font-size: var(--s-1); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; border: 1px solid var(--fg); padding: 0 .4rem; margin-right: .5rem; }
+blockquote { border-left: 4px solid var(--rule); padding: 0 0 0 1rem; margin-left: 0; }
+blockquote p { margin: 0 0 .4rem; }
+blockquote footer { border: 0; margin: 0; padding: 0; font-size: var(--s-1); color: var(--mut); }
+.scroll { overflow-x: auto; margin: 0 0 var(--sp); }
+table { border-collapse: collapse; width: 100%; font-size: var(--s-1); font-variant-numeric: tabular-nums; }
+caption { text-align: left; font-weight: 700; font-size: var(--s0); padding: 0 0 .5rem; }
+th, td { padding: .5rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+thead th { background: var(--band); border-bottom: 2px solid var(--fg); }
+tbody tr:nth-child(even) { background: var(--band); }
+tbody th { white-space: nowrap; }
+td.yes { font-weight: 700; }
+td.no { color: var(--mut); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1.25rem; }
 dt { font-weight: 700; }
-dd { margin: 0; }
-footer { border-top: 2px solid var(--rule); margin-top: 3rem; padding-top: .75rem; color: var(--mut); font-size: .95rem; }
-EOF
+dd { margin: 0; overflow-wrap: anywhere; }
+.gap { border: 2px solid var(--rule); border-left-width: 8px; padding: .75rem 1rem 0; margin: 0 0 var(--sp); }
+.gap h3 { margin-top: 0; }
+footer { border-top: 2px solid var(--rule); margin-top: calc(var(--sp) * 2); padding-top: .75rem; color: var(--mut); font-size: var(--s-1); }
+@media (max-width: 40rem) {
+  body { padding: 0 1rem 3rem; }
+  h1 { font-size: var(--s3); }
+  dl { grid-template-columns: 1fr; }
+  dt { margin-top: .5rem; }
+}
+@media print {
+  :root { --bg: #ffffff; --fg: #000000; --mut: #000000; --link: #000000; --visited: #000000; --rule: #000000; --band: #ffffff; }
+  body { font-size: 11pt; line-height: 1.4; max-width: none; padding: 0; }
+  nav, .skip { display: none; }
+  main > * { max-width: none; }
+  a { text-decoration: underline; }
+  a[href^="https:"]::after { content: " (" attr(href) ")"; font-size: .85em; overflow-wrap: anywhere; }
+  pre { white-space: pre-wrap; overflow: visible; border: 1px solid #000000; }
+  .scroll { overflow: visible; }
+  table, tr, .gap, blockquote, pre { break-inside: avoid; }
+  h1, h2, h3, caption { break-after: avoid; }
+  tbody tr:nth-child(even) { background: none; }
+  @page { margin: 18mm; }
+}
+CSS
 }
 
 html_head() { # TITLE PAGE
@@ -481,6 +1046,7 @@ html_head() { # TITLE PAGE
 <nav aria-label="Site">
 <ul>
 <li><a href="index.html"$(cur index "$2")>About</a></li>
+<li><a href="gaps.html"$(cur gaps "$2")>A view with its gaps</a></li>
 <li><a href="licensing.html"$(cur licensing "$2")>Licensing stack</a></li>
 <li><a href="rights.html"$(cur rights "$2")>Your rights on this site</a></li>
 </ul>
@@ -503,102 +1069,226 @@ Source: <a href="https://github.com/inputloop/orgfs">github.com/inputloop/orgfs<
 EOF
 }
 
-cmd_site() {
-  _decl=${1:-}; _out=${2:-}
-  [ -n "$_decl" ] && [ -n "$_out" ] || die "site: need DECL OUT"
-  load "$_decl"
-  [ "$VIS" != sealed ] || die "site: VISIBILITY sealed declarations are not published"
-  [ -f "$SHARE/licensing.tsv" ] || die "site: missing $SHARE/licensing.tsv"
-  mkdir -p "$_out" || die "site: cannot create $_out"
-  make_plan
-  write_css "$_out/orgfs.css"
-  cp "$SHARE/licensing.tsv" "$_out/licensing.tsv"
-  $AWK "$REGISTER_TXT_AWK" "$SHARE/licensing.tsv" > "$_out/licensing.txt" || die "site: bad register"
-  _e_name=$(esc_s "$SPOKE")
-  _rooturl=
-  {
-    html_head "About" index
+# one spoke, as the public site shows it (the site is a visitor: private roots and sealed spokes are gaps)
+site_spoke() {
+  _e=$(esc_s "$SPOKE")
+  if [ "$VIS" = sealed ]; then
     cat <<EOF
-<h1>orgfs</h1>
-<p>orgfs is a small tool that spreads files across the machines of a group as
-<em>stripes</em> (byte slices), keeps more than one copy of each stripe, and lets
-any machine put the pieces back together and check that nothing was altered on the
-way. The group, the stripes and the copies are all described by one plain-text
-Org file, the <em>declaration</em>, which every machine holds identically. Each
-machine works out its own part from that same file; no machine is in charge.</p>
-<p>This site is built by orgfs from such a declaration. It shows the declaration,
-the plan it produces, and the licences of the free software the project itself
-relies on, so that you can see whose work is in use and on what terms.</p>
-
-<h2>The declaration</h2>
-<p>Spoke <code>$_e_name</code>, identity (sha256 of its normalized properties):</p>
-<pre>$ID</pre>
+<div class="gap">
+<h3>Spoke $_e: withheld</h3>
 <dl>
+<dt>What</dt><dd>1 spoke, $(n_members) members; only its name is shown</dd>
+<dt>Rule</dt><dd>VISIBILITY sealed: a non-member is told the spoke exists and what it is called, nothing more</dd>
+<dt>Declared at</dt><dd>$(esc_s "$(at_spoke VISIBILITY)")</dd>
+<dt>Why</dt><dd>the spoke is sealed and this site is not one of its members</dd>
+<dt>Who can reach it</dt><dd>members of spoke $_e (names withheld: sealed)</dd>
+<dt>Route</dt><dd>on a member: <code>orgfs materialize DECL --as MEMBER --spoke $_e</code></dd>
+</dl>
+</div>
+EOF
+    return 0
+  fi
+  make_plan
+  cat <<EOF
+<h3>Spoke $_e</h3>
+<dl>
+<dt>Spoke identity</dt><dd><code>$ID</code></dd>
 <dt>Ring</dt><dd>$(esc_s "$RING")</dd>
 <dt>Stripes</dt><dd>$(esc_s "$STRIPES")</dd>
 <dt>Replicas</dt><dd>$(esc_s "$REPLICAS")</dd>
 <dt>Visibility</dt><dd>$(esc_s "$VIS")</dd>
 </dl>
-<div class="scroll" role="region" aria-label="Members table" tabindex="0">
+<div class="scroll" role="region" aria-label="Members of spoke $_e" tabindex="0">
 <table>
-<caption>Members of spoke $_e_name</caption>
+<caption>Members of spoke $_e</caption>
 <thead><tr><th scope="col">Member</th><th scope="col">Transport</th><th scope="col">Root</th></tr></thead>
 <tbody>
 EOF
-    for _h in $MEMBERS; do
-      if [ "$VIS" = public ]; then _root=$(esc_s "$(root_of "$_h")"); else _root="not published"; fi
-      printf '<tr><th scope="row">%s</th><td>%s</td><td><code>%s</code></td></tr>\n' \
-        "$(esc_s "$_h")" "$(esc_s "$(tr_of "$_h")")" "$_root"
-    done
-    cat <<EOF
+  for _h in $MEMBERS; do
+    if [ "$VIS" = public ]; then _root="<code>$(esc_s "$(root_of "$_h")")</code>"
+    else _root="withheld (private spoke; see the gap records)"; fi
+    printf '<tr><th scope="row">%s</th><td>%s</td><td>%s</td></tr>\n' "$(esc_s "$_h")" "$(esc_s "$(tr_of "$_h")")" "$_root"
+  done
+  cat <<EOF
+</tbody>
+</table>
+</div>
+<div class="scroll" role="region" aria-label="Plan of spoke $_e" tabindex="0">
+<table>
+<caption>Which member holds which stripe of spoke $_e</caption>
+<thead><tr><th scope="col">Stripe</th>
+EOF
+  for _h in $MEMBERS; do printf '<th scope="col">%s</th>' "$(esc_s "$_h")"; done
+  printf '</tr></thead>\n<tbody>\n'
+  $AWK -F'\t' -v members="$(printf '%s' "$MEMBERS" | tr '\n' ' ')" '
+    BEGIN { nm = split(members, m, " ") }
+    { split("", hold); n = split($2, a, " "); for (k = 1; k <= n; k++) hold[a[k]] = 1
+      printf "<tr><th scope=\"row\">%s</th>", $1
+      for (k = 1; k <= nm; k++) printf "%s", (m[k] in hold) ? "<td class=\"yes\">holds</td>" : "<td class=\"no\">no</td>"
+      printf "</tr>\n" }' "$TMP/plan"
+  cat <<EOF
 </tbody>
 </table>
 </div>
 EOF
-    if [ "$VIS" = public ]; then
+}
+
+cmd_site() {
+  _decl=${1:-}; _out=${2:-}
+  [ -n "$_decl" ] && [ -n "$_out" ] || die "site: need DECL OUT"
+  load "$_decl"
+  [ -f "$SHARE/licensing.tsv" ] || die "site: missing $SHARE/licensing.tsv"
+  mkdir -p "$_out" || die "site: cannot create $_out"
+  write_css "$_out/orgfs.css"
+  cp "$SHARE/licensing.tsv" "$_out/licensing.tsv"
+  $AWK "$REGISTER_TXT_AWK" "$SHARE/licensing.tsv" > "$_out/licensing.txt" || die "site: bad register"
+  _allpublic=1
+  for _s in $SPOKES; do load_spoke "$_s"; [ "$VIS" = public ] || _allpublic=0; done
+  _nplural=spokes; [ "$NSP" != 1 ] || _nplural=spoke
+  {
+    html_head "About" index
+    cat <<EOF
+<h1>orgfs</h1>
+<p class="status">Status: orgfs $VERSION, before 1.0. Linux only. Built by <code>orgfs site</code> from a declaration of $NSP $_nplural, file identity <code>$FILEID</code>. Nothing on this page says the tests passed; run <code>make check</code>.</p>
+
+<h2>What you get</h2>
+<p>You can spread a file over a group of machines and lose one without losing the
+file. You can also hand a machine a <em>view</em> of the group&#39;s storage in which
+nothing is silently left out: every omission is written down as a gap record that
+says what is missing, why, which line of the declaration says so, who could reach
+it and by which command. The group, the stripes and the copies come from one plain
+Org file, the <em>declaration</em>, which every machine holds identically.</p>
+
+<h2>What was asked</h2>
+<p><span class="tag">asked</span>Corwin Brust, 2026-11-06, about the first cut (short quotes; the full text is kept with the project, not here):</p>
+<blockquote>
+<p>&quot;a file materialized per host should contains double linkage to information it fetches rather than displays&quot;</p>
+<p>&quot;if we can scrub/redact/withold/drop some information we carry, then we can say how to do it and why each time, every time&quot;</p>
+<p>&quot;we should always be able to assemble a collection at whatever grain/cross-grain intersection or collection that a user can reach&quot;</p>
+<p>&quot;[ROOT as a path every member sees] is preferred, or at least &#39;my thoughts exactly&#39;&quot;</p>
+<footer>on the page: &quot;good in that it doesn&#39;t look like other things not as good in the particulars&quot;</footer>
+</blockquote>
+
+<h2>What was observed</h2>
+<p><span class="tag">observed</span>By <code>orgfs check</code> and <code>orgfs plan</code> on the declaration this site was built from.
+Several spokes may share one file. Each spoke has its own identity (the SHA-256 of its
+normalized properties) and the file has one made from the spokes&#39; identities,
+sorted, so neither the order of the spokes nor the prose changes either.</p>
+EOF
+    for _s in $SPOKES; do load_spoke "$_s"; site_spoke; done
+    if [ "$_allpublic" = 1 ]; then
       cat <<EOF
 <p>The declaration file itself, prose included: <a href="declaration.org">declaration.org</a>.</p>
+EOF
+    else
+      cat <<EOF
+<p>The declaration file is not published because at least one spoke in it is not public.</p>
 EOF
     fi
     cat <<EOF
 
-<h2>The plan</h2>
-<p>For each stripe, every member scores sha256 of <code>spoke|stripe|member</code>;
-the $(esc_s "$REPLICAS") highest scores hold the stripe. Because the rule uses only
-the declaration, every machine computes the same table.</p>
-<div class="scroll" role="region" aria-label="Plan table" tabindex="0">
-<table>
-<caption>Which member holds which stripe</caption>
-<thead><tr><th scope="col">Stripe</th>
+<h2>What was judged</h2>
+<ul>
+<li><span class="tag">choice</span>Several spokes per file, each with its own identity and the file with one too.
+Reason: a file that holds several spokes needs no rule, written outside it, for which one a host is asked about,
+because the question names the spoke. Would be wrong if two hosts given the same file and the same question
+ever disagree about the answer; <code>tests/test_orgfs.py</code> shuffles spoke order to look for that.</li>
+<li><span class="tag">choice</span>ROOT is the same path on every member. Reason: nothing host-specific then needs to be written
+anywhere. Would be wrong if a host cannot mount another member&#39;s storage at the same path.</li>
+<li><span class="tag">concern</span><code>--as HOST</code> is a claim, not a login; orgfs does not authenticate it. Would be wrong
+(a non-issue) if every host that can run orgfs is already trusted to be any member.</li>
+</ul>
+
+<h2>Not checked</h2>
+<ul>
+<li>Anything on a real ghostwheel host: the tests use local directories for hosts.</li>
+<li>Operating systems other than Linux, and sshfs mounts made for real.</li>
+<li>That a browser shows this page as intended in any particular browser or printer.</li>
+</ul>
 EOF
-    for _h in $MEMBERS; do printf '<th scope="col">%s</th>' "$(esc_s "$_h")"; done
-    printf '</tr></thead>\n<tbody>\n'
-    $AWK -F'\t' -v members="$(printf '%s' "$MEMBERS" | tr '\n' ' ')" '
-      BEGIN { nm = split(members, m, " ") }
-      { delete hold; n = split($2, a, " "); for (k = 1; k <= n; k++) hold[a[k]] = 1
-        printf "<tr><th scope=\"row\">%s</th>", $1
-        for (k = 1; k <= nm; k++) printf "<td>%s</td>", (m[k] in hold) ? "holds" : "no"
-        printf "</tr>\n" }' "$TMP/plan"
+    html_foot
+  } > "$_out/index.html"
+  if [ "$_allpublic" = 1 ]; then cp "$_decl" "$_out/declaration.org"; fi
+
+  # the demo world: a view for a visitor, gaps and all
+  _w=$TMP/siteworld
+  make_world "$_w"
+  _w=$WORLD
+  world_fill
+  orgfs_run materialize "$_w/world.org" --as visitor --out "$_w/visitor.org" > /dev/null || die "site: demo materialize failed"
+  sed "s#$_w#/demo#g" "$_w/visitor.org" > "$_out/view-visitor.org"
+  $AWK -v mode=tsv "$GAPS_AWK" "$_w/visitor.org" | sed "s#$_w#/demo#g" > "$TMP/gaps.tsv" || die "site: demo view has an incomplete gap"
+  _ngaps=$(wc -l < "$TMP/gaps.tsv" | tr -d ' ')
+  _vid=$(tail -n 1 "$_w/visitor.org" | sed 's/^# view-id: //')
+  {
+    html_head "A view with its gaps" gaps
+    cat <<EOF
+<h1>A view with its gaps</h1>
+<p class="status">Status: demo output, not a record of any real host. Built by <code>orgfs site</code> from a throwaway declaration of 3 spokes over local directories, then <code>orgfs materialize --as visitor</code>. $_ngaps gap records.</p>
+
+<h2>What you get</h2>
+<p>If you are a host that belongs to none of these spokes, this is what you may be shown of them.
+Where something is left out you are not left guessing: each gap says what it stands for (by kind and shape, never content),
+the rule that withheld it, the line of the declaration that states the rule, who could reach it and the command that would fill it.</p>
+
+<h2>What was observed</h2>
+<p><span class="tag">observed</span>The three spokes of the demo, as a visitor sees them:
+<code>licensing</code> is public (its roots and objects are shown, each item naming its source);
+<code>ring-notes</code> is private (members are named, roots withheld, the store is not read);
+<code>vault</code> is sealed (the name only).</p>
+<div class="scroll" role="region" aria-label="Gap records in the view" tabindex="0">
+<table>
+<caption>The $_ngaps gap records in the visitor&#39;s view</caption>
+<thead><tr><th scope="col">Gap</th><th scope="col">Kind</th><th scope="col">What (shape)</th><th scope="col">Rule</th><th scope="col">Declared at</th><th scope="col">Who can reach it</th></tr></thead>
+<tbody>
+EOF
+    $AWK -F'\t' '
+      function e(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); return s }
+      { printf "<tr><th scope=\"row\"><code>%s</code></th><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n", e($1), e($2), e($3), e($4), e($5), e($6) }' "$TMP/gaps.tsv"
     cat <<EOF
 </tbody>
 </table>
 </div>
+
+<h2>One gap, in full</h2>
+<p>The private spoke&#39;s first member, as the visitor sees it. The root path is not in the view at all; the gap says where the rule is written and who can ask for it.</p>
+<pre tabindex="0">$($AWK '/^\*+ gap ring-notes\/member-root\// { p = 1 } p { print } p && /^:END:/ { exit }' "$_w/visitor.org" | sed "s#$_w#/demo#g" | esc)</pre>
+
+<h2>What an item that was fetched looks like</h2>
+<p>An object of the public spoke, with its first slice. Every fetched item names its spoke, object, slice, member and path;
+the member&#39;s store keeps a record of this view in the file named by <code>BACKLINK</code>, so either end can be followed to the other
+(<code>orgfs trace</code>).</p>
+<pre tabindex="0">$($AWK '/^\*\* object / { p = 1 } /^\*\*\* slice / { s++ } s > 1 { exit } p { print }' "$_w/visitor.org" | sed "s#$_w#/demo#g" | esc)</pre>
+
+<h2>What was judged</h2>
+<ul>
+<li><span class="tag">choice</span>A view carries manifest rows, never slice bytes, so each slice has a gap record of its own. Reason: then the rule &quot;no withholding without a gap record&quot; has no exception. Would be wrong if readers find the slice gaps drown the others; the gap table above would show it.</li>
+<li><span class="tag">concern</span>The demo&#39;s directory is replaced by <code>/demo</code> on this page and in <a href="view-visitor.org">view-visitor.org</a>.
+The view-id <code>$_vid</code> was computed on the text before that replacement, so <code>orgfs trace</code> will not accept the rewritten copy. Would be wrong if you can rebuild the demo (<code>orgfs demo</code>) and see the same structure.</li>
+</ul>
+
+<h2>Not checked</h2>
+<ul>
+<li>Views of real hosts. Nothing here was produced on a ghostwheel host.</li>
+<li>That the withholding rules are the ones the declaration&#39;s authors want for real spokes.</li>
+</ul>
 EOF
     html_foot
-  } > "$_out/index.html"
-  if [ "$VIS" = public ]; then cp "$_decl" "$_out/declaration.org"; fi
+  } > "$_out/gaps.html"
 
   {
     html_head "Licensing stack" licensing
     cat <<EOF
 <h1>The licensing stack</h1>
-<p>These are the programs this project itself uses to build, test, run and serve
-this site, with the licence each one is distributed under and where that licence
-is stated. The table is also available as <a href="licensing.tsv">tab-separated
-data</a> and as <a href="licensing.txt">plain text</a>; orgfs stores those same two
-files in its own demo spoke.</p>
-<p>A licence marked <strong>unchecked</strong> is one we have not confirmed from the
-project&#39;s own licence text. We say so instead of guessing.</p>
+<p class="status">Status: register of $(( $(wc -l < "$SHARE/licensing.tsv" | tr -d ' ') - 1 )) entries, $(grep -c 'unchecked' "$SHARE/licensing.tsv") with a licence marked unchecked. Source URLs were not fetched when it was written.</p>
+<h2>What you get</h2>
+<p>You can see whose work this project uses to build, test, run and serve this site, and on what terms.
+The table is also available as <a href="licensing.tsv">tab-separated data</a> and as <a href="licensing.txt">plain text</a>;
+orgfs stores those same two files in its own demo spoke.</p>
+<h2>What was observed</h2>
+<p><span class="tag">observed</span>Where a licence could be read from a Debian <code>copyright</code> file on the machine the register was written on
+(dash, gawk, mawk, make, git, OpenSSH), that is what it says. The others are stated from the project&#39;s own known licence.
+A licence marked <strong>unchecked</strong> is one we have not confirmed from the project&#39;s own licence text. We say so instead of guessing.</p>
 <div class="scroll" role="region" aria-label="Licensing stack table" tabindex="0">
 <table>
 <caption>Software in use, licence, source and reason</caption>
@@ -615,6 +1305,11 @@ EOF
 </tbody>
 </table>
 </div>
+<h2>Not checked</h2>
+<ul>
+<li>The entries marked unchecked.</li>
+<li>Every source URL: none was fetched.</li>
+</ul>
 EOF
     html_foot
   } > "$_out/licensing.html"
@@ -623,8 +1318,9 @@ EOF
     html_head "Your rights on this site" rights
     cat <<EOF
 <h1>Your rights on this site</h1>
-<p>This page replaces a terms-of-use screen. It says what this site does and does
-not do to you, in plain words.</p>
+<p class="status">Status: this page replaces a terms-of-use screen. One of its three statements is a promise by the people who run the server; two you can check yourself.</p>
+<h2>What you get</h2>
+<p>You are told what this site does and does not do to you, in plain words, before you have to ask.</p>
 <h2>What this site does not do</h2>
 <ul>
 <li>It keeps no access log.</li>
@@ -633,10 +1329,10 @@ not do to you, in plain words.</p>
 from this same host. There are no scripts, fonts, images, embeds or analytics.</li>
 </ul>
 <h2>What you can check yourself</h2>
-<p>The first statement is a promise by the people who run the server; your browser
+<p><span class="tag">observed</span>The first statement is a promise; your browser
 cannot prove it. The other two you can look at: view the source of any page, or the
 network panel of your browser. You will find no script and no address on another
-host that the page fetches.</p>
+host that the page fetches. <span class="tag">judged</span>Would be wrong if the network panel shows a request to a second host.</p>
 <h2>Links to other places</h2>
 <p>Some text links to other sites, such as the project&#39;s source. They are links
 only. Nothing is fetched from them unless you choose to follow one, and then that
@@ -647,69 +1343,130 @@ site&#39;s own rules apply.</p>
 Creative Commons Attribution-ShareAlike 4.0. You may copy, study, change and share
 both, on those terms. The <a href="licensing.html">licensing stack</a> page lists
 the licences of the other software involved.</p>
+<h2>Not checked</h2>
+<ul>
+<li>That the server is configured the way the first statement says; this tool cannot make it so.</li>
+</ul>
 EOF
     html_foot
   } > "$_out/rights.html"
-  printf 'site: wrote %s (index.html licensing.html rights.html orgfs.css)\n' "$_out"
+  printf 'site: wrote %s (index.html gaps.html licensing.html rights.html orgfs.css view-visitor.org)\n' "$_out"
 }
 
 # ------------------------------------------------------------------ demo
+_self=$HERE/$(basename "$0")
+orgfs_run() { ${ORGFS_SHELL:-sh} "$_self" "$@"; }
+
+# DIR gets world.org (3 spokes over local directories) and the files to store.
+#   licensing  public   5 members  5 stripes 2 replicas   (the register, as .tsv and .txt)
+#   ring-notes private  3 members  3 stripes 2 replicas   (one short note)
+#   vault      sealed   2 members  2 stripes 1 replica    (nothing may be put in a sealed spoke)
+make_world() {
+  mw=$1; mkdir -p "$mw" || die "demo: cannot create $mw"
+  WORLD=$(cd "$mw" && pwd); mw=$WORLD
+  mw_n=1; while [ "$mw_n" -le 5 ]; do mkdir -p "$mw/demo$mw_n"; mw_n=$((mw_n + 1)); done
+  mw_n=1; while [ "$mw_n" -le 3 ]; do mkdir -p "$mw/private/demo$mw_n"; mw_n=$((mw_n + 1)); done
+  mkdir -p "$mw/vault/demo4" "$mw/vault/demo5"
+  {
+    printf '#+TITLE: world (throwaway demo declaration)\n\nThree spokes, three visibilities, over local directories standing in for hosts.\n\n'
+    printf '* spoke licensing\n:PROPERTIES:\n:RING: GREAT\n:STRIPES: 5\n:REPLICAS: 2\n:VISIBILITY: public\n:END:\n\n'
+    mw_n=1; while [ "$mw_n" -le 5 ]; do
+      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/demo%s\n:TRANSPORT: local\n:END:\n' "$mw_n" "$mw" "$mw_n"; mw_n=$((mw_n + 1))
+    done
+    printf '\n* spoke ring-notes\n:PROPERTIES:\n:RING: GRAIN\n:STRIPES: 3\n:REPLICAS: 2\n:VISIBILITY: private\n:END:\n\n'
+    mw_n=1; while [ "$mw_n" -le 3 ]; do
+      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/private/demo%s\n:TRANSPORT: local\n:END:\n' "$mw_n" "$mw" "$mw_n"; mw_n=$((mw_n + 1))
+    done
+    printf '\n* spoke vault\n:PROPERTIES:\n:RING: GRAIN\n:STRIPES: 2\n:REPLICAS: 1\n:VISIBILITY: sealed\n:END:\n\n'
+    mw_n=4; while [ "$mw_n" -le 5 ]; do
+      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/vault/demo%s\n:TRANSPORT: local\n:END:\n' "$mw_n" "$mw" "$mw_n"; mw_n=$((mw_n + 1))
+    done
+  } > "$mw/world.org"
+  cp "$SHARE/licensing.tsv" "$mw/licensing.tsv"
+  $AWK "$REGISTER_TXT_AWK" "$mw/licensing.tsv" > "$mw/licensing.txt" || die "demo: bad register"
+  printf 'A short note kept in the private spoke of the demo.\nIts members may read it; a visitor is told it exists and nothing more.\n' > "$mw/note.txt"
+}
+
+world_fill() { # quiet puts; sets ID_TSV ID_TXT ID_NOTE
+  ID_TSV=$(orgfs_run put "$WORLD/world.org" "$WORLD/licensing.tsv" --spoke licensing) || die "demo: put failed"
+  ID_TXT=$(orgfs_run put "$WORLD/world.org" "$WORLD/licensing.txt" --spoke licensing) || die "demo: put failed"
+  ID_NOTE=$(orgfs_run put "$WORLD/world.org" "$WORLD/note.txt" --spoke ring-notes) || die "demo: put failed"
+}
+
 cmd_demo() {
   _keep=${1:-}
   [ -f "$SHARE/licensing.tsv" ] || die "demo: missing $SHARE/licensing.tsv"
   if [ -n "$_keep" ]; then _d=$_keep; mkdir -p "$_d"; else _d=$(mktemp -d "${TMPDIR:-/tmp}/orgfs-demo.XXXXXX"); fi
-  _d=$(cd "$_d" && pwd)
-  _n=1
-  while [ "$_n" -le 5 ]; do mkdir -p "$_d/demo$_n"; _n=$((_n + 1)); done
-  {
-    printf '#+TITLE: licensing (throwaway demo declaration)\n\n* spoke licensing\n:PROPERTIES:\n'
-    printf ':RING: GREAT\n:STRIPES: 5\n:REPLICAS: 2\n:VISIBILITY: public\n:END:\n\n'
-    printf 'Five local directories stand in for five hosts.\n\n'
-    _n=1
-    while [ "$_n" -le 5 ]; do
-      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/demo%s\n:TRANSPORT: local\n:END:\n' "$_n" "$_d" "$_n"
-      _n=$((_n + 1))
-    done
-  } > "$_d/licensing.org"
-  _self=$HERE/$(basename "$0")
-  orgfs_run() { ${ORGFS_SHELL:-sh} "$_self" "$@"; }
-  cp "$SHARE/licensing.tsv" "$_d/licensing.tsv"
-  $AWK "$REGISTER_TXT_AWK" "$_d/licensing.tsv" > "$_d/licensing.txt" || die "demo: bad register"
+  make_world "$_d"
+  _d=$WORLD
+  _w=$_d/world.org
   echo "== demo directory: $_d"
   echo "== check"
-  orgfs_run check "$_d/licensing.org" || exit 1
-  echo "== plan"
-  orgfs_run plan "$_d/licensing.org"
+  orgfs_run check "$_w" || exit 1
+  echo "== plan (spoke licensing)"
+  orgfs_run plan "$_w" --spoke licensing
   echo "== put"
-  _id1=$(orgfs_run put "$_d/licensing.org" "$_d/licensing.tsv") || exit 1
-  _id2=$(orgfs_run put "$_d/licensing.org" "$_d/licensing.txt") || exit 1
-  echo "licensing.tsv  $_id1"
-  echo "licensing.txt  $_id2"
+  world_fill
+  echo "licensing.tsv  $ID_TSV  (spoke licensing)"
+  echo "licensing.txt  $ID_TXT  (spoke licensing)"
+  echo "note.txt       $ID_NOTE  (spoke ring-notes)"
   echo "== get"
   mkdir -p "$_d/out"
-  orgfs_run get "$_d/licensing.org" "$_id1" "$_d/out/licensing.tsv" || exit 1
-  orgfs_run get "$_d/licensing.org" "$_id2" "$_d/out/licensing.txt" || exit 1
+  orgfs_run get "$_w" "$ID_TSV" "$_d/out/licensing.tsv" --spoke licensing || exit 1
+  orgfs_run get "$_w" "$ID_TXT" "$_d/out/licensing.txt" --spoke licensing || exit 1
   cmp "$_d/licensing.tsv" "$_d/out/licensing.tsv" || die "demo: tsv came back different"
   cmp "$_d/licensing.txt" "$_d/out/licensing.txt" || die "demo: txt came back different"
   echo "bytes identical to the originals: yes"
   echo "== verify"
-  orgfs_run verify "$_d/licensing.org" || exit 1
+  orgfs_run verify "$_w" --spoke licensing || exit 1
   echo "== lose one member (demo3's stored data moved aside)"
   mv "$_d/demo3/.orgfs" "$_d/demo3-orgfs-aside"
-  orgfs_run get "$_d/licensing.org" "$_id1" "$_d/out/again.tsv" || exit 1
+  orgfs_run get "$_w" "$ID_TSV" "$_d/out/again.tsv" --spoke licensing || exit 1
   cmp "$_d/licensing.tsv" "$_d/out/again.tsv" || die "demo: degraded get came back different"
   echo "get still works with one member gone: yes"
-  orgfs_run verify "$_d/licensing.org" && echo "(unexpected: verify passed)" || echo "verify reports reduced redundancy, as it should"
+  orgfs_run verify "$_w" --spoke licensing && echo "(unexpected: verify passed)" || echo "verify reports reduced redundancy, as it should"
   mv "$_d/demo3-orgfs-aside" "$_d/demo3/.orgfs"
-  orgfs_run verify "$_d/licensing.org" || exit 1
+  orgfs_run verify "$_w" --spoke licensing || exit 1
+  echo "== materialize as visitor (a host in none of the spokes)"
+  orgfs_run materialize "$_w" --as visitor --out "$_d/out/visitor.org" || exit 1
+  _ng=$($AWK '/^\*+ gap /{ n++ } END { print n + 0 }' "$_d/out/visitor.org")
+  echo "gap records in the visitor's view: $_ng"
+  if grep -q "$_d/private" "$_d/out/visitor.org" || grep -q "$_d/vault" "$_d/out/visitor.org"; then
+    die "demo: a private or sealed path leaked into the visitor's view"
+  fi
+  echo "private and sealed paths in the visitor's view: none"
+  orgfs_run routes "$_d/out/visitor.org" | tail -n 1
+  echo "== assemble as demo1 (a member of ring-notes)"
+  orgfs_run assemble "$_w" --as demo1 --spoke ring-notes --into "$_d/asm" --out "$_d/out/demo1.org" || exit 1
+  cmp "$_d/note.txt" "$_d/asm/ring-notes/$ID_NOTE" || die "demo: the assembled note differs"
+  echo "the member's collection holds the private note, bytes identical: yes"
+  echo "== trace (the note, back to the views that fetched it)"
+  orgfs_run trace "$_w" --spoke ring-notes --object "$ID_NOTE"
+  orgfs_run trace "$_d/out/demo1.org" || exit 1
   echo "== report"
-  echo "spoke licensing: 5 stripes, 2 replicas, 5 members; both files restored and verified."
+  echo "3 spokes (public, private, sealed); both licensing files restored and verified; the visitor's view has $_ng gap records, each with its rule, its line and its routes."
   if [ -z "$_keep" ]; then rm -rf "$_d"; else echo "kept: $_d"; fi
 }
 
 # ------------------------------------------------------------------ main
 _cmd=${1:-}
 [ $# -gt 0 ] && shift
+_n=$#
+while [ "$_n" -gt 0 ]; do
+  _a=$1; shift; _n=$((_n - 1))
+  case $_a in
+    --spoke|--as|--object|--out|--into|--root|--decl)
+      [ "$_n" -gt 0 ] || die "$_a needs a value"
+      _v=$1; shift; _n=$((_n - 1))
+      case $_a in
+        --spoke) O_SPOKE=$_v;; --as) O_AS=$_v;; --object) O_OBJECT=$_v;; --out) O_OUT=$_v;;
+        --into) O_INTO=$_v;; --root) O_ROOT=$_v;; --decl) O_DECL=$_v;;
+      esac;;
+    --no-mounts) O_NOMOUNTS=1;;
+    -*) die "unknown option: $_a";;
+    *) set -- "$@" "$_a";;
+  esac
+done
 case $_cmd in
   check) cmd_check "$@";;
   plan) cmd_plan "$@";;
@@ -717,6 +1474,11 @@ case $_cmd in
   put) cmd_put "$@";;
   get) cmd_get "$@";;
   verify) cmd_verify "$@";;
+  materialize) cmd_view materialize "$@";;
+  assemble) cmd_view assemble "$@";;
+  routes) cmd_routes "$@";;
+  trace) cmd_trace "$@";;
+  layout) cmd_layout "$@";;
   site) cmd_site "$@";;
   demo) cmd_demo "$@";;
   version|-V|--version) echo "orgfs $VERSION";;

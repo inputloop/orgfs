@@ -22,6 +22,7 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(HERE)
 BIN = os.environ.get("ORGFS_BIN", os.path.join(HERE, "..", "bin", "orgfs"))
 SHELL = shlex.split(os.environ.get("ORGFS_SHELL", "sh"))
 
@@ -162,14 +163,14 @@ class CheckTests(Base):
         write_decl(p, mem + [mem[0]])
         self.assertNotEqual(orgfs("check", p)[0], 0)
 
-    def test_rejects_unknown_property_and_two_spokes(self):
+    def test_rejects_unknown_property_and_incomplete_second_spoke(self):
         with open(self.decl) as f:
             text = f.read()
         p = os.path.join(self.d, "bad.org")
         with open(p, "w") as f:
             f.write(text.replace(":RING: GREAT", ":RING: GREAT\n:COLOUR: red"))
         self.assertNotEqual(orgfs("check", p)[0], 0)
-        with open(p, "w") as f:
+        with open(p, "w") as f:    # several spokes are allowed now; an incomplete one is still refused
             f.write(text + "\n* spoke second\n:PROPERTIES:\n:RING: GRAIN\n:END:\n")
         self.assertNotEqual(orgfs("check", p)[0], 0)
 
@@ -444,14 +445,15 @@ class SiteTests(Base):
 
     def pages(self, out):
         res = {}
-        for n in ("index.html", "licensing.html", "rights.html"):
+        for n in ("index.html", "gaps.html", "licensing.html", "rights.html"):
             with open(os.path.join(out, n), encoding="utf-8") as f:
                 res[n] = f.read()
         return res
 
     def test_files_and_semantics(self):
         out = self.render()
-        for n in ("index.html", "licensing.html", "rights.html", "orgfs.css", "licensing.tsv", "licensing.txt"):
+        for n in ("index.html", "gaps.html", "licensing.html", "rights.html", "orgfs.css", "licensing.tsv",
+                  "licensing.txt", "view-visitor.org"):
             self.assertTrue(os.path.exists(os.path.join(out, n)), n)
         for n, html in self.pages(out).items():
             self.assertTrue(html.startswith("<!DOCTYPE html>"), n)
@@ -484,7 +486,7 @@ class SiteTests(Base):
             css = f.read().lower()
         self.assertNotIn("@import", css)
         self.assertNotIn("url(", css)
-        self.assertNotIn("http", css)
+        self.assertNotIn("://", css)
 
     def test_rights_page_says_the_three_things(self):
         rights = self.pages(self.render())["rights.html"]
@@ -502,15 +504,24 @@ class SiteTests(Base):
         for name in ("dash", "nginx", "dehydrated", "OpenSSH", "Proxmox VE", "Debian", "git"):
             self.assertIn(name, lic)
 
-    def test_private_hides_roots_and_sealed_refused(self):
+    def test_private_hides_roots_and_sealed_is_only_a_name(self):
         out = self.render(vis="private")
         idx = self.pages(out)["index.html"]
         self.assertNotIn(self.d, idx)
         self.assertFalse(os.path.exists(os.path.join(out, "declaration.org")))
         out = self.render(vis="public")
         self.assertTrue(os.path.exists(os.path.join(out, "declaration.org")))
+        # a sealed spoke is not refused any more: the site shows its name and a gap record, nothing else
         self.write(vis="sealed")
-        self.assertNotEqual(orgfs("site", self.decl, os.path.join(self.d, "s2"))[0], 0)
+        out = os.path.join(self.d, "s2")
+        rc, _, err = orgfs("site", self.decl, out)
+        self.assertEqual(rc, 0, err)
+        with open(os.path.join(out, "index.html")) as f:
+            idx = f.read()
+        self.assertIn("Spoke t: withheld", idx)
+        for h in self.hosts:
+            self.assertNotIn(self.roots[h], idx)
+        self.assertFalse(os.path.exists(os.path.join(out, "declaration.org")))
 
     def test_html_escaping_of_roots(self):
         p = os.path.join(self.d, "e.org")

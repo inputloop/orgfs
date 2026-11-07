@@ -8,13 +8,13 @@ AWKS   ?= gawk mawk
 
 check:
 	sh -n bin/orgfs
-	$(PYTHON) tests/test_orgfs.py
+	$(PYTHON) tests/run_all.py
 
 # every shell x every awk (slow; not part of `check`)
 check-shells:
 	@set -e; for sh in $(SHELLS); do for awk in $(AWKS); do \
 	  echo "== shell: $$sh   awk: $$awk"; \
-	  ORGFS_SHELL="$$sh" ORGFS_AWK="$$awk" $(PYTHON) tests/test_orgfs.py 2>&1 | tail -3; \
+	  ORGFS_SHELL="$$sh" ORGFS_AWK="$$awk" $(PYTHON) tests/run_all.py 2>&1 | tail -6; \
 	done; done
 
 prove-red:
