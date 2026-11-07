@@ -1,0 +1,12 @@
+#+TITLE: licensing - an example declaration
+#+LANGUAGE: en
+
+This is an example. The declaration is kept as atoms: this file, one spoke.org
+for the spoke and one member-HOST.org for each member. Hold the atoms (or the
+file composed from them with =orgfs compose=) identically on every member and
+each host derives its own part of the plan from them. Prose such as this
+paragraph is ignored by the tool and does not change the spoke's identity.
+
+The paths follow the /spokes layout of the ghostwheel: another host's storage
+appears as an sshfs mount under /spokes/HOST/storage, at the same path on
+every host that uses it.

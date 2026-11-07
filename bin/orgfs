@@ -17,7 +17,7 @@ set -u
 LC_ALL=C
 export LC_ALL
 AWK=${ORGFS_AWK:-awk}
-VERSION=0.2.0
+VERSION=0.3.0
 HERE=$(cd "$(dirname "$0")" && pwd)
 SHARE=${ORGFS_SHARE:-$HERE/../share}
 
@@ -42,6 +42,10 @@ size_of() { wc -c < "$1" | tr -d ' '; }
 usage() {
   cat <<'USAGE'
 usage: orgfs COMMAND ...
+  DECL is a declaration in either form: a directory of atoms (the source of record:
+  one small Org file per spoke and one per member) or the one file composed from them.
+  compose DIR [--out FILE]   build the one literate file from the atoms in DIR
+  decompose FILE DIR         split a composed file back into the atoms (byte for byte)
   check DECL [--spoke S] [--no-mounts]
                              parse and sanity-check a declaration; print identities
   plan DECL [--spoke S] [--as HOST]
@@ -74,29 +78,76 @@ USAGE
 # Reads the Org declaration, ignores prose.  Prints, unsorted, on stdout:
 #   D <spoke> spoke  KEY VALUE             the normalized data (identity is made of it)
 #   D <spoke> member HOST KEY VALUE
-#   L <spoke> spoke  KEY LINE              where the declaration says it (not in the identity)
-#   L <spoke> member HOST KEY LINE
+#   L <spoke> spoke  KEY WHERE             where the declaration says it (not in the identity)
+#   L <spoke> member HOST KEY WHERE
+# WHERE is "line N" in a plain file, and "ATOM line N" inside a composed file, ATOM being the
+# atom file (SPOKE/spoke.org, SPOKE/member-HOST.org) that the line came from: the composed
+# file marks each atom with "# orgfs-atom: begin ATOM" ... "# orgfs-atom: end ATOM" comments.
 # Complaints on stderr, status 1 if anything is wrong.
+#
+# ATOM_AWK is the one rule for what an atom may be called; compose, decompose and the parser share it.
+ATOM_AWK='
+function atom_check(p,   n, a, i) {
+  n = split(p, a, "/")
+  if (n > 2) return "an atom sits at NAME.org, SPOKE/spoke.org or SPOKE/member-HOST.org, no deeper"
+  for (i = 1; i <= n; i++) if (a[i] !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) return "bad path component " a[i] " (letters, digits, dot, dash, underscore)"
+  if (p !~ /\.org$/) return "an atom is an .org file"
+  if (n == 2) {
+    if (a[1] !~ /^[a-z0-9][a-z0-9_-]*$/) return "the directory of a spoke must match [a-z0-9][a-z0-9_-]*"
+    if (a[2] != "spoke.org" && a[2] !~ /^member-[A-Za-z0-9][A-Za-z0-9._-]*\.org$/) return "inside a spoke directory an atom is spoke.org or member-HOST.org"
+  }
+  return ""
+}
+'
 PARSE_AWK='
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
-function fail(m) { printf "orgfs: %s:%d: %s\n", FILENAME, NR, m > "/dev/stderr"; bad = 1 }
-function endfail(m) { printf "orgfs: %s: %s\n", FILENAME, m > "/dev/stderr"; bad = 1 }
-BEGIN { bad = 0; cur = ""; drawer = 0; nsp = 0; sname = "" }
+function at(n) { return (atom != "") ? atom " line " (n - abase) : "line " n }
+function fail(m) { printf "orgfs: %s: %s\n", (atom != "") ? atom ":" (NR - abase) : decl ":" NR, m > "/dev/stderr"; bad = 1 }
+function afail(m) { printf "orgfs: %s: %s\n", atom, m > "/dev/stderr"; bad = 1 }
+function endfail(m) { printf "orgfs: %s: %s\n", decl, m > "/dev/stderr"; bad = 1 }
+function spoke_ok(p, name,   a) { return split(p, a, "/") == 2 && a[1] == name && a[2] == "spoke.org" }
+function member_ok(p, spoke, host,   a) { return split(p, a, "/") == 2 && a[1] == spoke && a[2] == "member-" host ".org" }
+function atom_end(   n, a) {
+  n = split(atom, a, "/")
+  if (n == 2 && a[2] == "spoke.org" && ns_in != 1) afail("a spoke.org atom holds exactly one \"* spoke NAME\" heading (found " ns_in ")")
+  if (n == 2 && a[2] != "spoke.org" && nmem_in != 1) afail("a member atom holds exactly one \"** member HOST\" heading (found " nmem_in ")")
+  atom = ""
+}
+BEGIN { bad = 0; cur = ""; drawer = 0; nsp = 0; sname = ""; atom = ""; abase = 0; natoms = 0; outsideh = 0 }
+/^# orgfs-atom: / {
+  if (NF != 4 || ($3 != "begin" && $3 != "end")) { fail("bad atom marker: " $0); next }
+  p = $4
+  if ($3 == "begin") {
+    if (atom != "") fail("atom " p " begins inside atom " atom)
+    else if (p in aseen) fail("atom " p " appears twice")
+    else if ((r = atom_check(p)) != "") fail("atom " p ": " r)
+    else { atom = p; abase = NR; aseen[p] = 1; natoms++; ns_in = 0; nmem_in = 0 }
+  } else {
+    if (atom == "") fail("end marker for " p " with no atom open")
+    else if (atom != p) fail("end marker for " p " inside atom " atom)
+    else atom_end()
+  }
+  cur = ""; drawer = 0
+  next
+}
 /^\*+[ \t]/ {
   drawer = 0; cur = ""
   n = 0
   while (substr($0, n + 1, 1) == "*") n++
   nw = split(trim(substr($0, n + 1)), w, /[ \t]+/)
-  if (n == 1) sname = ""
+  if (n == 1 && atom == "") sname = ""
+  if (atom == "" && ((n == 1 && w[1] == "spoke") || (n == 2 && w[1] == "member"))) outsideh++
   if (n == 1 && w[1] == "spoke") {
     if (nw != 2) fail("heading must read: spoke NAME")
+    else if (atom != "" && !spoke_ok(atom, w[2])) fail("spoke " w[2] " belongs in " w[2] "/spoke.org, not in " atom)
     else if (w[2] in sseen) fail("duplicate spoke " w[2])
-    else { sname = w[2]; sseen[sname] = 1; nsp++; sorder[nsp] = sname; nm[sname] = 0; kl[sname, "heading"] = NR; cur = "spoke" }
+    else { sname = w[2]; sseen[sname] = 1; nsp++; sorder[nsp] = sname; nm[sname] = 0; kl[sname, "heading"] = at(NR); cur = "spoke"; ns_in++ }
   } else if (n == 2 && w[1] == "member") {
     if (nw != 2) fail("heading must read: member HOST")
     else if (sname == "") fail("member heading outside a spoke")
+    else if (atom != "" && !member_ok(atom, sname, w[2])) fail("member " w[2] " of spoke " sname " belongs in " sname "/member-" w[2] ".org, not in " atom " (the spoke.org of a spoke comes before its members)")
     else if ((sname, w[2]) in seen) fail("duplicate member " w[2] " in spoke " sname)
-    else { host = w[2]; seen[sname, host] = 1; nm[sname]++; order[sname, nm[sname]] = host; ml[sname, host, "heading"] = NR; cur = "member" }
+    else { host = w[2]; seen[sname, host] = 1; nm[sname]++; order[sname, nm[sname]] = host; ml[sname, host, "heading"] = at(NR); cur = "member"; nmem_in++ }
   }
   next
 }
@@ -112,15 +163,17 @@ drawer {
   if (cur == "spoke") {
     if (key !~ /^(RING|STRIPES|REPLICAS|VISIBILITY)$/) { fail("unknown spoke property " key); next }
     if ((sname, key) in sp) { fail("duplicate property " key); next }
-    sp[sname, key] = val; kl[sname, key] = NR
+    sp[sname, key] = val; kl[sname, key] = at(NR)
   } else {
     if (key !~ /^(ROOT|TRANSPORT)$/) { fail("unknown member property " key); next }
     if ((sname, host, key) in mp) { fail("duplicate property " key " on member " host); next }
-    mp[sname, host, key] = val; ml[sname, host, key] = NR
+    mp[sname, host, key] = val; ml[sname, host, key] = at(NR)
   }
   next
 }
 END {
+  if (atom != "") afail("the atom is not closed (no end marker)")
+  if (natoms > 0 && outsideh > 0) endfail("a composed file declares only through its atoms, but " outsideh " spoke or member heading(s) stand outside any atom")
   if (bad) exit 1
   if (nsp == 0) endfail("no \"* spoke NAME\" heading")
   split("RING STRIPES REPLICAS VISIBILITY", req, " ")
@@ -164,16 +217,16 @@ END {
     printf "D\t%s\tspoke\tSTRIPES\t%d\n", s, nst[s]
     printf "D\t%s\tspoke\tREPLICAS\t%d\n", s, nrp[s]
     printf "D\t%s\tspoke\tVISIBILITY\t%s\n", s, nvis[s]
-    printf "L\t%s\tspoke\theading\t%d\n", s, kl[s, "heading"]
+    printf "L\t%s\tspoke\theading\t%s\n", s, kl[s, "heading"]
     split("RING STRIPES REPLICAS VISIBILITY", ks, " ")
-    for (j = 1; j <= 4; j++) printf "L\t%s\tspoke\t%s\t%d\n", s, ks[j], kl[s, ks[j]]
+    for (j = 1; j <= 4; j++) printf "L\t%s\tspoke\t%s\t%s\n", s, ks[j], kl[s, ks[j]]
     for (j = 1; j <= nm[s]; j++) {
       h = order[s, j]
       printf "D\t%s\tmember\t%s\tROOT\t%s\n", s, h, mp[s, h, "ROOT"]
       printf "D\t%s\tmember\t%s\tTRANSPORT\t%s\n", s, h, mp[s, h, "TRANSPORT"]
-      printf "L\t%s\tmember\t%s\theading\t%d\n", s, h, ml[s, h, "heading"]
-      printf "L\t%s\tmember\t%s\tROOT\t%d\n", s, h, ml[s, h, "ROOT"]
-      printf "L\t%s\tmember\t%s\tTRANSPORT\t%d\n", s, h, ml[s, h, "TRANSPORT"]
+      printf "L\t%s\tmember\t%s\theading\t%s\n", s, h, ml[s, h, "heading"]
+      printf "L\t%s\tmember\t%s\tROOT\t%s\n", s, h, ml[s, h, "ROOT"]
+      printf "L\t%s\tmember\t%s\tTRANSPORT\t%s\n", s, h, ml[s, h, "TRANSPORT"]
     }
   }
 }
@@ -208,10 +261,140 @@ load_spoke() { # NAME -> ID SPOKE RING STRIPES REPLICAS VIS MEMBERS
   MEMBERS=$($AWK -F'\t' '$1=="member"&&$3=="ROOT"{print $2}' "$TMP/norm")
 }
 
+# ------------------------------------------------------------------ atoms
+# The source of record is a directory of atoms: DIR/NAME.org (prose), DIR/SPOKE/spoke.org (one
+# "* spoke SPOKE" heading with its four properties) and DIR/SPOKE/member-HOST.org (one
+# "** member HOST" heading with its two).  The one literate file is composed from them: each atom
+# inlined between "# orgfs-atom: begin ATOM" and "# orgfs-atom: end ATOM" comment lines (comments in
+# Org, so Emacs reads the composed file as an ordinary Org file).
+
+# DIR -> $TMP/atoms: the atoms' paths relative to DIR, in composition order
+# (prose atoms first; then each spoke in name order, its spoke.org before its members).
+atoms_list() {
+  (cd "$1" && find . -type f -name '*.org') | sed 's#^\./##' | $AWK "$ATOM_AWK"'
+    { r = atom_check($0)
+      if (r != "") { printf "orgfs: %s: %s\n", $0, r > "/dev/stderr"; bad = 1; next }
+      n = split($0, a, "/")
+      if (n == 1) printf "0\t\t0\t%s\n", $0
+      else printf "1\t%s\t%s\t%s\n", a[1], (a[2] == "spoke.org") ? "0" : "1", $0 }
+    END { exit bad + 0 }' > "$TMP/atoms.k" || return 1
+  sort "$TMP/atoms.k" | cut -f4 > "$TMP/atoms"
+  [ -s "$TMP/atoms" ] || { printf 'orgfs: %s holds no atoms (no *.org files)\n' "$1" >&2; return 1; }
+  return 0
+}
+
+# DIR OUT [m]: the composed file.  Refuses an atom that could not be split out again.
+# With m the file carries a manifest: the declaration identity and the sha256 of every atom, so a
+# command that reads the composed file can tell whether the atoms still say what it says.
+compose_dir() {
+  [ -d "$1" ] || { printf 'orgfs: not a directory: %s\n' "$1" >&2; return 1; }
+  atoms_list "$1" || return 1
+  cd_bad=0
+  while IFS= read -r cd_a; do
+    [ -z "$(tail -c 1 "$1/$cd_a")" ] || { printf 'orgfs: atom %s does not end in a newline\n' "$cd_a" >&2; cd_bad=1; }
+    ! grep -Eq '^# orgfs-(atom|compose|manifest): ' "$1/$cd_a" || { printf 'orgfs: atom %s holds a line that looks like a composition marker\n' "$cd_a" >&2; cd_bad=1; }
+  done < "$TMP/atoms"
+  [ "$cd_bad" = 0 ] || return 1
+  {
+    while IFS= read -r cd_a; do
+      printf '\n# orgfs-atom: begin %s\n' "$cd_a"
+      cat "$1/$cd_a"
+      printf '# orgfs-atom: end %s\n' "$cd_a"
+    done < "$TMP/atoms"
+  } > "$TMP/cbody" || return 1
+  {
+    printf '# orgfs-compose: 1\n'
+    printf '# orgfs-compose: composed from the atoms; edit the atoms, not this file (orgfs decompose splits it back)\n'
+    if [ "${3:-}" = m ]; then
+      printf '# orgfs-compose: every command that reads this file checks the manifest below against the atoms beside it\n'
+      parse_decl "$TMP/cbody" "$1"
+      printf '# orgfs-manifest: identity %s\n' "$FILEID"
+      atoms_list "$1" || return 1
+      while IFS= read -r cd_a; do printf '# orgfs-manifest: sha256 %s %s\n' "$(sha_file "$1/$cd_a")" "$cd_a"; done < "$TMP/atoms"
+    fi
+    cat "$TMP/cbody"
+  } > "$2" || return 1
+}
+
+# FILE NAME: a composed file's manifest against its own atoms and against the atoms beside it.
+# 0: fresh, or nothing to check against (then a warning says so); 1: STALE (lines on stderr).
+# The atoms beside FILE.org are in FILE.d.  MF_IDENT is the identity the manifest states.
+MF_IDENT=
+check_fresh() {
+  MF_IDENT=
+  grep -q '^# orgfs-atom: begin ' "$1" || return 0
+  if ! grep -q '^# orgfs-manifest: ' "$1"; then
+    warn "$2: composed file has no manifest; freshness not checked"; return 0
+  fi
+  MF_IDENT=$($AWK '$1=="#"&&$2=="orgfs-manifest:"&&$3=="identity"{ print $4; exit }' "$1")
+  $AWK '$1=="#"&&$2=="orgfs-manifest:"&&$3=="sha256"{ print $5 "\t" $4 }' "$1" | sort > "$TMP/mf"
+  # what the composed text itself holds, atom by atom
+  rm -rf "$TMP/fstage"; mkdir -p "$TMP/fstage"
+  $AWK -v file="$1" -v mode=list "$ATOM_AWK$DECOMP_AWK" "$1" > "$TMP/flist" || return 1
+  while IFS= read -r cf_p; do mkdir -p "$TMP/fstage/$(dirname "$cf_p")"; done < "$TMP/flist"
+  $AWK -v file="$1" -v mode=write -v stage="$TMP/fstage" "$ATOM_AWK$DECOMP_AWK" "$1" || return 1
+  while IFS= read -r cf_p; do printf '%s\t%s\n' "$cf_p" "$(sha_file "$TMP/fstage/$cf_p")"; done < "$TMP/flist" | sort > "$TMP/fe"
+  cf_rc=0
+  stale_diff "$TMP/mf" "$TMP/fe" "in the composed file itself" || cf_rc=1
+  case $2 in *.org) cf_dir=${2%.org}.d;; *) cf_dir=$2.d;; esac
+  if [ -d "$cf_dir" ]; then
+    if atoms_list "$cf_dir"; then
+      while IFS= read -r cf_p; do printf '%s\t%s\n' "$cf_p" "$(sha_file "$cf_dir/$cf_p")"; done < "$TMP/atoms" | sort > "$TMP/fa"
+      stale_diff "$TMP/mf" "$TMP/fa" "in the atoms beside it, $cf_dir" || cf_rc=1
+    else
+      cf_rc=1
+    fi
+  else
+    warn "$2: composed file read without its atoms; freshness not checked"
+  fi
+  return "$cf_rc"
+}
+
+# MANIFEST NOW WHERE: both "path TAB sha", sorted; prints a STALE line for every difference
+stale_diff() {
+  $AWK -F'\t' -v where="$3" '
+    NR == FNR { m[$1] = $2; next }
+    { n[$1] = $2 }
+    END {
+      for (p in m) if (!(p in n)) printf "orgfs: STALE: %s removed since compose (%s)\n", p, where
+                   else if (m[p] != n[p]) printf "orgfs: STALE: %s changed since compose (%s)\n", p, where
+      for (p in n) if (!(p in m)) printf "orgfs: STALE: %s added since compose (%s)\n", p, where
+    }' "$1" "$2" | sort > "$TMP/stale"
+  [ -s "$TMP/stale" ] || return 0
+  cat "$TMP/stale" >&2
+  return 1
+}
+
 # DECL -> SPOKES NSP FILEID; and, when --spoke names one or the file has just one, that spoke is loaded
+# DECL is an atom directory or a composed (or plain, single) file; DECLFILE is the file that gets parsed.
 load() {
-  [ -f "$1" ] || die "cannot read declaration: $1"
-  $AWK "$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $1"
+  if [ -d "$1" ]; then
+    compose_dir "$1" "$TMP/composed" || die "cannot compose the atoms in $1"
+    DECLFILE=$TMP/composed
+  elif [ -f "$1" ]; then
+    DECLFILE=$1
+  else
+    die "cannot read declaration: $1"
+  fi
+  if [ -f "$1" ]; then
+    check_fresh "$DECLFILE" "$1" || die "$1 is STALE: compose it again (orgfs compose DIR --out FILE), or decompose it if the composed text is what you meant to change"
+  fi
+  parse_decl "$DECLFILE" "$1"
+  if [ -f "$1" ] && [ -n "$MF_IDENT" ] && [ "$MF_IDENT" != "$FILEID" ]; then
+    die "STALE: the identity of $1 is $FILEID but its manifest says $MF_IDENT; compose it again"
+  fi
+  SPOKE=; ID=; MEMBERS=
+  if [ -n "$O_SPOKE" ]; then
+    in_list "$O_SPOKE" "$SPOKES" || die "$1 has no spoke $O_SPOKE (it has: $(echo $SPOKES))"
+    load_spoke "$O_SPOKE"
+  elif [ "$NSP" = 1 ]; then
+    load_spoke "$SPOKES"
+  fi
+}
+
+# FILE NAME -> SPOKES NSP FILEID and the normalized rows of each spoke ($TMP/norm.SPOKE)
+parse_decl() {
+  $AWK -v decl="$2" "$ATOM_AWK$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $2"
   sort "$TMP/raw" > "$TMP/all"
   SPOKES=$($AWK -F'\t' '$1=="D"&&$3=="spoke"&&$4=="name"{print $2}' "$TMP/all")
   NSP=$(printf '%s\n' "$SPOKES" | wc -l | tr -d ' ')
@@ -222,17 +405,87 @@ load() {
   done
   # the file's identity is made of the spokes' identities, sorted: spoke order cannot matter
   FILEID=$({ printf 'orgfs-file-1\n'; sort "$TMP/ids"; } | sha_stdin)
-  SPOKE=; ID=; MEMBERS=
-  if [ -n "$O_SPOKE" ]; then
-    in_list "$O_SPOKE" "$SPOKES" || die "$1 has no spoke $O_SPOKE (it has: $(echo $SPOKES))"
-    load_spoke "$O_SPOKE"
-  elif [ "$NSP" = 1 ]; then
-    load_spoke "$SPOKES"
-  fi
 }
 
 need_spoke() { # COMMAND
   [ -n "$SPOKE" ] || die "$1: this declaration has $NSP spokes ($(echo $SPOKES)); say which with --spoke NAME"
+}
+
+# ------------------------------------------------------------------ compose, decompose
+# decompose reads the composed file twice: "list" prints each atom's path, "write" writes each atom
+# into STAGE.  It refuses text outside the atoms (it would be lost) rather than drop it.
+DECOMP_AWK='
+function fail(m) { printf "orgfs: %s:%d: %s\n", file, NR, m > "/dev/stderr"; bad = 1 }
+BEGIN { atom = ""; bad = 0; n = 0 }
+/^# orgfs-atom: / {
+  if (NF != 4 || ($3 != "begin" && $3 != "end")) { fail("bad atom marker"); next }
+  p = $4
+  if ($3 == "begin") {
+    if (atom != "") { fail("atom " p " begins inside atom " atom); next }
+    r = atom_check(p)
+    if (r != "") { fail("atom " p ": " r); next }
+    if (p in seen) { fail("atom " p " appears twice"); next }
+    seen[p] = 1; atom = p; n++
+    if (mode == "write") { out = stage "/" p; printf "" > out }
+    else print p
+  } else {
+    if (atom != p) { fail("end marker for " p (atom == "" ? " with no atom open" : " inside atom " atom)); next }
+    if (mode == "write") close(out)
+    atom = ""
+  }
+  next
+}
+atom != "" { if (mode == "write") printf "%s\n", $0 > out; next }
+/^[ \t\r]*$/ { next }
+/^# orgfs-(compose|manifest): / { next }
+{ fail("text outside any atom would be lost: " $0) }
+END {
+  if (atom != "") { printf "orgfs: %s: atom %s is not closed\n", file, atom > "/dev/stderr"; bad = 1 }
+  if (n == 0) { printf "orgfs: %s: no atoms in it (no \"# orgfs-atom: begin\" lines)\n", file > "/dev/stderr"; bad = 1 }
+  exit bad
+}
+'
+
+cmd_compose() {
+  _dir=${1:-}; [ -n "$_dir" ] || die "compose: need DIR"
+  [ -d "$_dir" ] || die "compose: $_dir is not a directory"
+  case $O_OUT in "${_dir%/}"/*) die "compose: --out must not be inside $_dir (it would be taken for an atom)";; esac
+  compose_dir "$_dir" "$TMP/composed.out" m || die "compose: refused"
+  $AWK -v decl="$_dir" "$ATOM_AWK$PARSE_AWK" "$TMP/composed.out" > /dev/null || die "compose: the atoms do not make a valid declaration"
+  find "$_dir" -type f ! -name '*.org' | while IFS= read -r _x; do warn "not an atom, left out: $_x"; done
+  _n=$(wc -l < "$TMP/atoms" | tr -d ' ')
+  if [ -n "$O_OUT" ]; then
+    cp "$TMP/composed.out" "$O_OUT" || die "compose: cannot write $O_OUT"
+    printf 'compose: wrote %s (%s atoms)\n' "$O_OUT" "$_n"
+  else
+    cat "$TMP/composed.out"
+  fi
+}
+
+cmd_decompose() {
+  _f=${1:-}; _dir=${2:-}
+  [ -n "$_f" ] && [ -n "$_dir" ] || die "decompose: need FILE DIR"
+  [ -f "$_f" ] || die "decompose: cannot read $_f"
+  $AWK -v file="$_f" -v mode=list "$ATOM_AWK$DECOMP_AWK" "$_f" > "$TMP/dlist" || die "decompose: refused"
+  mkdir -p "$TMP/stage" || die "decompose: cannot make a staging directory"
+  while IFS= read -r _p; do mkdir -p "$TMP/stage/$(dirname "$_p")"; done < "$TMP/dlist"
+  $AWK -v file="$_f" -v mode=write -v stage="$TMP/stage" "$ATOM_AWK$DECOMP_AWK" "$_f" || die "decompose: refused"
+  _clash=0
+  while IFS= read -r _p; do
+    if [ -e "$_dir/$_p" ] && ! cmp -s "$TMP/stage/$_p" "$_dir/$_p"; then
+      printf 'orgfs: decompose: %s/%s exists and differs from the atom in %s\n' "$_dir" "$_p" "$_f" >&2; _clash=1
+    fi
+  done < "$TMP/dlist"
+  [ "$_clash" = 0 ] || die "decompose: nothing written; move the atoms aside, or compare them (diff), first"
+  if [ -d "$_dir" ] && atoms_list "$_dir" 2>/dev/null; then
+    grep -vxF -f "$TMP/dlist" "$TMP/atoms" | while IFS= read -r _x; do warn "atom $_x is in $_dir but not in $_f; left as it is"; done
+  fi
+  _n=0
+  while IFS= read -r _p; do
+    mkdir -p "$_dir/$(dirname "$_p")" && cp "$TMP/stage/$_p" "$_dir/$_p" || die "decompose: cannot write $_dir/$_p"
+    _n=$((_n + 1))
+  done < "$TMP/dlist"
+  printf 'decompose: wrote %s atoms into %s\n' "$_n" "$_dir"
 }
 
 # ------------------------------------------------------------------ mounts
@@ -533,7 +786,7 @@ gap_route() { printf ':ROUTE: %s\n' "$1"; }
 gap_close() { printf ':END:\n'; }
 
 is_member() { in_list "$VHOST" "$MEMBERS"; }
-at_spoke() { printf 'line %s (:%s:)' "$(spoke_line "$1")" "$1"; }
+at_spoke() { printf '%s (:%s:)' "$(spoke_line "$1")" "$1"; }
 n_members() { printf '%s\n' "$MEMBERS" | wc -l | tr -d ' '; }
 
 # who could reach what a gap stands for, and by which routes
@@ -579,7 +832,7 @@ gap_member_root() { # HOST
   gm_n=$(root_of "$1" | $AWK -F/ '{print NF - 1}')
   gap_open '**' "$SPOKE/member-root/$1" member-root "1 absolute path, $gm_n components" \
     "VISIBILITY private: a non-member sees who the members are, not where they keep their slices" \
-    "$(at_spoke VISIBILITY); withheld field declared at line $(member_line "$1" ROOT) (:ROOT:)" \
+    "$(at_spoke VISIBILITY); withheld field declared at $(member_line "$1" ROOT) (:ROOT:)" \
     "$VERB left the :ROOT: property of member $1 out of this view" \
     "the spoke is private and $VHOST is not one of its members" "$(reach_text)"
   routes_for materialize "--spoke $SPOKE"
@@ -599,7 +852,7 @@ gap_objects_hidden() {
 gap_member_store() { # HOST WHY
   gap_open '**' "$SPOKE/member-store/$1" member-store "1 store: the .orgfs tree under one ROOT" \
     "a member's store is read only if its ROOT is a directory, and a mount point for TRANSPORT sshfs" \
-    "line $(member_line "$1" ROOT) (:ROOT:), line $(member_line "$1" TRANSPORT) (:TRANSPORT:)" \
+    "$(member_line "$1" ROOT) (:ROOT:), $(member_line "$1" TRANSPORT) (:TRANSPORT:)" \
     "$VERB could not read the store of member $1: $2" \
     "the store is not reachable from the machine that built this view" \
     "$1; any host that has $1's ROOT mounted at the same path"
@@ -631,7 +884,7 @@ gap_manifest() { # OBJECT WHY
 gap_backlink() { # LEVEL OBJECT MEMBER
   gap_open "$1" "$SPOKE/backlink/$2/$3" backlink "1 record: one line in a MATERIALIZED file" \
     "the source side keeps a record of which hosts materialized an object" \
-    "line $(member_line "$3" ROOT) (:ROOT:)" \
+    "$(member_line "$3" ROOT) (:ROOT:)" \
     "$VERB could not write the record on member $3: its store directory for the object is not writable from here" \
     "the view links to this source one way only until the record exists" "$3; any host that can write $3's store"
   gap_route "on $3: orgfs $VERB DECL --as $VHOST --spoke $SPOKE --object $2${G_INTO:+ --into DIR}"
@@ -646,7 +899,7 @@ gap_slice_bytes() { # OBJECT STRIPE SIZE HOLDERS HELD WHYEXTRA
     gs_why="a view is a record of where things are; bytes travel by assemble or get${6:+; $6}"
   else
     gs_rule="rendezvous plan: only the REPLICAS highest-scoring members hold a stripe"
-    gs_at="line $(spoke_line STRIPES) (:STRIPES:), line $(spoke_line REPLICAS) (:REPLICAS:)"
+    gs_at="$(spoke_line STRIPES) (:STRIPES:), $(spoke_line REPLICAS) (:REPLICAS:)"
     gs_why="$VHOST holds no copy of stripe $2 under the plan, and a view carries no bytes either way${6:+; $6}"
   fi
   gap_open '****' "$SPOKE/slice-bytes/$1/$2.of.$STRIPES" slice-bytes "1 slice, $3 bytes" \
@@ -727,12 +980,12 @@ view_spoke() {
   if is_member; then vs_acc=member; elif [ "$VIS" = public ]; then vs_acc=read; else vs_acc=none; fi
   if [ "$VIS" = sealed ] && [ "$vs_acc" != member ]; then gap_sealed; return 0; fi
   make_plan
-  printf '* spoke %s\n:PROPERTIES:\n:ROLE: displayed\n:SPOKE_ID: %s\n:RING: %s\n:STRIPES: %s\n:REPLICAS: %s\n:VISIBILITY: %s\n:ACCESS: %s\n:END:\n' \
-    "$SPOKE" "$ID" "$RING" "$STRIPES" "$REPLICAS" "$VIS" "$vs_acc"
+  printf '* spoke %s\n:PROPERTIES:\n:ROLE: displayed\n:SPOKE_ID: %s\n:RING: %s\n:STRIPES: %s\n:REPLICAS: %s\n:VISIBILITY: %s\n:ACCESS: %s\n:DECLARED_AT: %s\n:END:\n' \
+    "$SPOKE" "$ID" "$RING" "$STRIPES" "$REPLICAS" "$VIS" "$vs_acc" "$(spoke_line heading)"
   for vs_h in $MEMBERS; do
     printf '** member %s\n:PROPERTIES:\n:ROLE: displayed\n:TRANSPORT: %s\n' "$vs_h" "$(tr_of "$vs_h")"
     [ "$vs_acc" = none ] || printf ':ROOT: %s\n' "$(root_of "$vs_h")"
-    printf ':HOLDS: %s\n:END:\n' "$(holds_of "$vs_h")"
+    printf ':HOLDS: %s\n:DECLARED_AT: %s\n:END:\n' "$(holds_of "$vs_h")" "$(member_line "$vs_h" heading)"
     [ "$vs_acc" != none ] || gap_member_root "$vs_h"
   done
   if [ "$vs_acc" = none ]; then gap_objects_hidden; return 0; fi
@@ -1171,9 +1424,11 @@ Org file, the <em>declaration</em>, which every machine holds identically.</p>
 
 <h2>What was observed</h2>
 <p><span class="tag">observed</span>By <code>orgfs check</code> and <code>orgfs plan</code> on the declaration this site was built from.
-Several spokes may share one file. Each spoke has its own identity (the SHA-256 of its
-normalized properties) and the file has one made from the spokes&#39; identities,
-sorted, so neither the order of the spokes nor the prose changes either.</p>
+The declaration is stored as atoms: one small Org file for each spoke and one for each member.
+<code>orgfs compose</code> builds the one literate file from them and <code>orgfs decompose</code> splits it back,
+byte for byte; every command gives the same identity whichever form it is given.
+Each spoke has its own identity (the SHA-256 of its normalized properties) and the file has one
+made from the spokes&#39; identities, sorted, so neither the order of the spokes nor the prose changes either.</p>
 EOF
     for _s in $SPOKES; do load_spoke "$_s"; site_spoke; done
     if [ "$_allpublic" = 1 ]; then
@@ -1189,9 +1444,13 @@ EOF
 
 <h2>What was judged</h2>
 <ul>
-<li><span class="tag">choice</span>Several spokes per file, each with its own identity and the file with one too.
-Reason: a file that holds several spokes needs no rule, written outside it, for which one a host is asked about,
-because the question names the spoke. Would be wrong if two hosts given the same file and the same question
+<li><span class="tag">choice</span>Atoms are what is stored; the single file is composed from them. Reason: a change to one
+member is a change to one small file, and the one literate file is still there to read, at any time, as the
+composition. Would be wrong if reading a spoke means opening so many files that the composed file is what people
+edit after all; <code>tests/test_atoms.py</code> composes, decomposes and compares the bytes to look for drift.</li>
+<li><span class="tag">choice</span>Several spokes per declaration, each with its own identity and the declaration with one too.
+Reason: the question names the spoke, so no rule outside the declaration says which spoke a host is asked about.
+Would be wrong if two hosts given the same declaration and the same question
 ever disagree about the answer; <code>tests/test_orgfs.py</code> shuffles spoke order to look for that.</li>
 <li><span class="tag">choice</span>ROOT is the same path on every member. Reason: nothing host-specific then needs to be written
 anywhere. Would be wrong if a host cannot mount another member&#39;s storage at the same path.</li>
@@ -1208,7 +1467,10 @@ anywhere. Would be wrong if a host cannot mount another member&#39;s storage at 
 EOF
     html_foot
   } > "$_out/index.html"
-  if [ "$_allpublic" = 1 ]; then cp "$_decl" "$_out/declaration.org"; fi
+  if [ "$_allpublic" = 1 ]; then
+    if [ -d "$_decl" ]; then ( compose_dir "$_decl" "$_out/declaration.org" m ) || die "site: cannot compose $_decl"
+    else cp "$DECLFILE" "$_out/declaration.org"; fi
+  fi
 
   # the demo world: a view for a visitor, gaps and all
   _w=$TMP/siteworld
@@ -1357,31 +1619,31 @@ EOF
 _self=$HERE/$(basename "$0")
 orgfs_run() { ${ORGFS_SHELL:-sh} "$_self" "$@"; }
 
-# DIR gets world.org (3 spokes over local directories) and the files to store.
+# DIR gets world.d (the atoms), world.org (composed from them) and the files to store.
 #   licensing  public   5 members  5 stripes 2 replicas   (the register, as .tsv and .txt)
 #   ring-notes private  3 members  3 stripes 2 replicas   (one short note)
 #   vault      sealed   2 members  2 stripes 1 replica    (nothing may be put in a sealed spoke)
+mw_spoke() { # NAME RING STRIPES REPLICAS VISIBILITY
+  mkdir -p "$mw/world.d/$1" || die "demo: cannot create $mw/world.d/$1"
+  printf '* spoke %s\n:PROPERTIES:\n:RING: %s\n:STRIPES: %s\n:REPLICAS: %s\n:VISIBILITY: %s\n:END:\n' "$1" "$2" "$3" "$4" "$5" > "$mw/world.d/$1/spoke.org"
+}
+mw_member() { # SPOKE HOST ROOT
+  printf '** member %s\n:PROPERTIES:\n:ROOT: %s\n:TRANSPORT: local\n:END:\n' "$2" "$3" > "$mw/world.d/$1/member-$2.org"
+}
 make_world() {
   mw=$1; mkdir -p "$mw" || die "demo: cannot create $mw"
   WORLD=$(cd "$mw" && pwd); mw=$WORLD
   mw_n=1; while [ "$mw_n" -le 5 ]; do mkdir -p "$mw/demo$mw_n"; mw_n=$((mw_n + 1)); done
   mw_n=1; while [ "$mw_n" -le 3 ]; do mkdir -p "$mw/private/demo$mw_n"; mw_n=$((mw_n + 1)); done
-  mkdir -p "$mw/vault/demo4" "$mw/vault/demo5"
-  {
-    printf '#+TITLE: world (throwaway demo declaration)\n\nThree spokes, three visibilities, over local directories standing in for hosts.\n\n'
-    printf '* spoke licensing\n:PROPERTIES:\n:RING: GREAT\n:STRIPES: 5\n:REPLICAS: 2\n:VISIBILITY: public\n:END:\n\n'
-    mw_n=1; while [ "$mw_n" -le 5 ]; do
-      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/demo%s\n:TRANSPORT: local\n:END:\n' "$mw_n" "$mw" "$mw_n"; mw_n=$((mw_n + 1))
-    done
-    printf '\n* spoke ring-notes\n:PROPERTIES:\n:RING: GRAIN\n:STRIPES: 3\n:REPLICAS: 2\n:VISIBILITY: private\n:END:\n\n'
-    mw_n=1; while [ "$mw_n" -le 3 ]; do
-      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/private/demo%s\n:TRANSPORT: local\n:END:\n' "$mw_n" "$mw" "$mw_n"; mw_n=$((mw_n + 1))
-    done
-    printf '\n* spoke vault\n:PROPERTIES:\n:RING: GRAIN\n:STRIPES: 2\n:REPLICAS: 1\n:VISIBILITY: sealed\n:END:\n\n'
-    mw_n=4; while [ "$mw_n" -le 5 ]; do
-      printf '** member demo%s\n:PROPERTIES:\n:ROOT: %s/vault/demo%s\n:TRANSPORT: local\n:END:\n' "$mw_n" "$mw" "$mw_n"; mw_n=$((mw_n + 1))
-    done
-  } > "$mw/world.org"
+  mkdir -p "$mw/vault/demo4" "$mw/vault/demo5" "$mw/world.d"
+  printf '#+TITLE: world (throwaway demo declaration)\n\nThree spokes, three visibilities, over local directories standing in for hosts.\nThe atoms are the source; world.org is composed from them.\n' > "$mw/world.d/preface.org"
+  mw_spoke licensing GREAT 5 2 public
+  mw_n=1; while [ "$mw_n" -le 5 ]; do mw_member licensing "demo$mw_n" "$mw/demo$mw_n"; mw_n=$((mw_n + 1)); done
+  mw_spoke ring-notes GRAIN 3 2 private
+  mw_n=1; while [ "$mw_n" -le 3 ]; do mw_member ring-notes "demo$mw_n" "$mw/private/demo$mw_n"; mw_n=$((mw_n + 1)); done
+  mw_spoke vault GRAIN 2 1 sealed
+  mw_n=4; while [ "$mw_n" -le 5 ]; do mw_member vault "demo$mw_n" "$mw/vault/demo$mw_n"; mw_n=$((mw_n + 1)); done
+  ( compose_dir "$mw/world.d" "$mw/world.org" m ) || die "demo: cannot compose the atoms"
   cp "$SHARE/licensing.tsv" "$mw/licensing.tsv"
   $AWK "$REGISTER_TXT_AWK" "$mw/licensing.tsv" > "$mw/licensing.txt" || die "demo: bad register"
   printf 'A short note kept in the private spoke of the demo.\nIts members may read it; a visitor is told it exists and nothing more.\n' > "$mw/note.txt"
@@ -1401,8 +1663,15 @@ cmd_demo() {
   _d=$WORLD
   _w=$_d/world.org
   echo "== demo directory: $_d"
-  echo "== check"
+  echo "== check (the composed file, then the atoms it was composed from)"
   orgfs_run check "$_w" || exit 1
+  _i1=$(orgfs_run check "$_w" --no-mounts | grep '^file-identity')
+  _i2=$(orgfs_run check "$_d/world.d" --no-mounts | grep '^file-identity')
+  [ "$_i1" = "$_i2" ] || die "demo: the atoms and the composed file disagree about identity"
+  echo "same file identity from the atoms in world.d and from world.org: yes"
+  orgfs_run compose "$_d/world.d" --out "$_d/again.org" > /dev/null || exit 1
+  cmp "$_d/world.org" "$_d/again.org" || die "demo: composing twice gave different files"
+  echo "composing the atoms again gives the same bytes: yes"
   echo "== plan (spoke licensing)"
   orgfs_run plan "$_w" --spoke licensing
   echo "== put"
@@ -1468,6 +1737,8 @@ while [ "$_n" -gt 0 ]; do
   esac
 done
 case $_cmd in
+  compose) cmd_compose "$@";;
+  decompose) cmd_decompose "$@";;
   check) cmd_check "$@";;
   plan) cmd_plan "$@";;
   agree) cmd_agree "$@";;

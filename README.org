@@ -7,8 +7,8 @@
 Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors.
 Code: GPL-3.0-or-later (see =COPYING=). Prose, including this file: CC-BY-SA-4.0.
 
-*Status:* orgfs 0.2.0, 2026-11-06, before 1.0. Tested on Linux only; Windows, macOS and the BSDs are not yet tested. 104 tests passed here
-(=make check=) under dash, bash and busybox sh, each with gawk and mawk. 38 planted
+*Status:* orgfs 0.3.0, 2026-11-06, before 1.0. Tested on Linux only; Windows, macOS and the BSDs are not yet tested. 164 tests passed here
+(=make check=) under dash, bash and busybox sh, each with gawk and mawk. 53 planted
 faults were each caught. Nothing has run on a ghostwheel host yet. See
 [[*What was observed][What was observed]] for the commands and [[*NOT CHECKED][NOT CHECKED]] for what was not.
 
@@ -23,8 +23,11 @@ states the rule, who could reach it, and the command that would fill it. A host
 can ask for a collection at any grain it can reach (one object, one spoke, all
 spokes) and gets gap records for the rest.
 
-The group, the stripe count and the number of copies come from one Org file, the
-/declaration/, which every machine holds identically. No machine is in charge.
+The group, the stripe count and the number of copies come from the /declaration/, which
+every machine holds identically. No machine is in charge. The declaration is /stored/ as
+atoms (one small Org file per spoke and per member) and can be /composed/ into one
+literate Org file at any time; every command reads either form and gives the same answer
+(see [[*Atoms and composition][Atoms and composition]]).
 
 orgfs is POSIX =sh= and =awk= (a target host may have no Python, no Node, no package
 manager). Its tests are Python 3, standard library only: a different language from the
@@ -74,17 +77,30 @@ this is preferred, or at least "my thoughts exactly"
 /c4 seats the principle registry on the host, that /spokes seats each cross-mounting spoke
 #+END_QUOTE
 
+At 20:51, on 0.2.0 (this is what 0.3.0 answers):
+
+#+BEGIN_QUOTE
+When we think about one file vs lots of files we should be thinking about YES AND because org will let us do composition. My goal was that we can RECOMPOSE the single file, not that we work in terms of a single big file: I think we got our signals cross. I prefer atomic storage.
+#+END_QUOTE
+
+At 20:57, on depending on a composed record:
+
+#+BEGIN_QUOTE
+depending on some composed record is FINE as long as we know that reading that source always pulls together those atoms and otherwise cannot ignore some change that should be included
+#+END_QUOTE
+
 * What was observed
 
 Each line is a command and what it printed. Nothing here is a judgement.
 
 | Command                                                    | Printed (here, 2026-11-06)                                            |
 |------------------------------------------------------------+-----------------------------------------------------------------------|
-| =make check=                                               | =check: OK (104 tests in 4 modules)=; 36.8 s on a 2-core VM          |
+| =make check=                                               | =check: OK (164 tests in 5 modules)=; 62.6 s on avalon (F:\claude)   |
 | =ORGFS_SHELL=S ORGFS_AWK=A python3 tests/run_all.py=       | the same line for S in {dash, bash, busybox sh} and A in {gawk, mawk} |
 | =PROVE_RED_RANGE=a:b python3 tests/prove_red.py= (6 ranges) | =(4 of 4=, =7 of 7=, =5 of 5=, =6 of 6=, =8 of 8=, =8 of 8 caught; control passed)= |
 | =sh bin/orgfs demo=                                        | 15 gap records in the visitor's view; no private or sealed path in it |
-| =sh bin/orgfs check examples/licensing.org --no-mounts=    | spoke identity =1df8d78c...e013=, the same as 0.1.0 printed for it    |
+| =sh bin/orgfs check examples/licensing.d --no-mounts=      | spoke identity =1df8d78c...e013=, the same as 0.1.0 printed for it; the same from the composed file |
+| =sh bin/orgfs compose examples/licensing.d --out FILE= then =decompose FILE DIR= | the 6 atoms back, byte for byte (=tests/test_atoms.py=) |
 | =sh bin/orgfs layout= (on the VM that built this)          | =layout: 0 held, 2 broken, 3 not checked= (the VM has no /c4, /spokes) |
 
 Versions: dash and bash 5.1.16 and busybox 1.30.1 (Ubuntu), gawk 5.1.0, mawk 1.3.4 20200120.
@@ -96,6 +112,48 @@ and was not run as one.
 
 Each is a choice with its reason, or a concern with what would show it wrong.
 
+- *Choice: atoms are what is stored; the one file is composed from them, never edited as the
+  source.* Corwin, 20:51: "YES AND", "RECOMPOSE the single file", "I prefer atomic storage".
+  Every command takes either form and gives the same identity, plan, view and gap records.
+  Would be wrong if the composed file is in practice where people make their changes; then
+  =decompose= would clash with the atoms (it refuses to overwrite one that differs) and
+  =tests/test_atoms.py= would not have seen it. The 0.2.0 plain single file is still accepted as
+  input (nothing in it can go stale), which keeps old files working and also keeps the way open to
+  use one as a source; orgfs does not stop that.
+- *Choice: the grain is one file per spoke and one per member.* Reason: that is the finest grain
+  at which each atom is still an Org document with its own heading and property drawer (below it
+  a drawer would be cut from its heading), and it matches who changes what: adding a host adds one
+  file, retiring one removes one, the owner of a host can own that host's atom, and a review of
+  =git diff= shows one member at a time. The spoke atom holds the four properties that are
+  decided together (a ring, a stripe count and a replica count only make sense as a set).
+  Would be wrong if the usual change touches many atoms at once (renaming a spoke moves a
+  directory and every member's heading): the cost would show as atoms that must change in
+  lockstep, and the answer would be a coarser atom, not a bigger source file.
+- *Choice: the composed file inlines the atoms between =# orgfs-atom: begin/end PATH= comment
+  lines, not =#+INCLUDE:= lines.* Reason: =decompose= needs the atoms' bytes inside the file, and a
+  file of =#+INCLUDE:= lines carries none of them, so it could not travel alone. The markers are
+  Org comments, so Emacs should read the composed file as ordinary Org. Would be wrong if Emacs
+  treats them otherwise; nobody opened one in Emacs (see NOT CHECKED).
+- *Choice: a composed file is checked against the atoms beside it, found by name (=X.org= and
+  =X.d=).* Corwin, 20:57: reading it must "always pull together those atoms" and it "cannot ignore
+  some change that should be included". The manifest in the file lists every atom's SHA-256 and the
+  declaration identity; any difference refuses with =STALE=, and nothing is read from the stale
+  text. When the atoms are not beside it the file is read and stderr says "composed file read
+  without its atoms; freshness not checked": a gap, stated. Would be wrong if a composed file
+  usually lives apart from its atoms; the warning would then be on every read, which is the signal.
+- *Choice: the gap records and the displayed headings name atoms.* =RULE_AT= reads
+  =pub/spoke.org line 6 (:VISIBILITY:)=; a displayed spoke or member has =DECLARED_AT=. A plain
+  file keeps =line N=. Would be wrong if anyone needs the line in the composed file: it is not
+  recorded anywhere, because the dir and the composed form must give the same record.
+- *Reading, two ways:* "A composed file can carry both" (atom and composed line) I read as: the
+  composed file carries the atom markers, so a gap can name the atom whichever form was read. I did
+  not add the composed file's own line to gap records, since that would make the two forms differ.
+  Would be wrong if you meant both numbers in one record.
+- *Concern: the manifest detects change, not forgery.* It is a SHA-256 in the same file, not a
+  signature; whoever edits an atom and composes again produces a fresh, consistent pair. Signing is
+  your act (the repository commits are unsigned by design); nothing in orgfs checks one. Would be
+  wrong (a non-issue) if the atoms and the composed file are always signed and the signature is
+  checked before orgfs runs.
 - *Choice: several spokes per file; each spoke has an identity and so does the file.*
   Reason: Corwin rejected one spoke per file. A question to orgfs always names its spoke
   (=--spoke S=, or the file has only one), so no rule outside the file is needed to say
@@ -177,7 +235,9 @@ is prose, which the tool ignores and which cannot change an identity.
 :END:
 #+END_SRC
 
-(=examples/licensing.org= is a full single-spoke example; its paths are illustrative.)
+(=examples/licensing.d= is a full single-spoke example, stored as atoms; its paths are illustrative.
+=make compose= writes the file composed from it, =examples/licensing.org=, which is generated and
+not kept in git. What follows is the declaration as one file, which is what =compose= makes.)
 
 | Property     | On     | Meaning                                                                  |
 |--------------+--------+--------------------------------------------------------------------------|
@@ -213,6 +273,83 @@ Rules the tool enforces:
 
 =put= still refuses a sealed spoke: sealed would mean encrypted and orgfs has no encryption.
 
+* Atoms and composition
+
+The declaration is stored as /atoms/ and read in either form. YES AND: you work with the small
+files, and you can at any moment have the one literate file, which is composed, never the source.
+
+#+BEGIN_EXAMPLE
+licensing.d/                    the atoms (the source of record)
+    preface.org                 prose; any NAME.org at the top; changes no identity
+    licensing/spoke.org         one "* spoke licensing" heading with its four properties
+    licensing/member-gw12.org   one "** member gw12" heading with its two properties
+    licensing/member-gw14.org   ...
+licensing.org                   composed from the above by: orgfs compose licensing.d --out licensing.org
+#+END_EXAMPLE
+
+An atom is an =.org= file at =NAME.org=, =SPOKE/spoke.org= or =SPOKE/member-HOST.org=, and nowhere
+deeper. A =spoke.org= holds exactly one spoke heading, named as its directory; a
+=member-HOST.org= holds exactly one member heading, named as its file, in the spoke of its
+directory. The parser checks all of it and names the atom and the line in it when it refuses.
+Why this grain is in [[*What was judged][What was judged]].
+
+** The composed file
+
+Each atom is inlined between two comment lines (comments in Org, so the file is ordinary Org):
+
+#+BEGIN_EXAMPLE
+# orgfs-compose: 1
+# orgfs-manifest: identity SHA-256-OF-THE-DECLARATION
+# orgfs-manifest: sha256 SHA-256-OF-AN-ATOM PATH          (one line per atom)
+
+# orgfs-atom: begin licensing/spoke.org
+,* spoke licensing
+...
+# orgfs-atom: end licensing/spoke.org
+#+END_EXAMPLE
+
+Order is fixed: prose atoms first, then each spoke in name order with its =spoke.org= before its
+members, so composing the same atoms twice gives the same bytes. =compose= refuses an atom that
+does not end in a newline or that holds a marker line (it could not be split out again), a file
+among the atoms that is in the wrong place, and atoms that do not make a valid declaration. A file
+that is not =.org= is named and left out.
+
+=decompose FILE DIR= writes each atom to =DIR/PATH= exactly as it was. It refuses text outside
+the atoms (it would be lost), an unclosed, repeated, nested or mismatched atom, and a path that is
+not an atom path (=..= and absolute paths among them). It writes nothing at all if any atom it
+would write already exists in DIR with different bytes; one that is identical is left; one in DIR
+and not in the file is named. Atoms to composed file to atoms is byte for byte, and
+composed to atoms to composed is the same file (=tests/test_atoms.py=).
+
+** One identity, either form
+
+Every command that takes DECL takes an atom directory or a composed or plain file: =check=,
+=plan=, =agree=, =put=, =get=, =verify=, =materialize=, =assemble=, =trace= (with =--object=),
+=layout --decl= and =site=. Identity is made from the normalized properties only, so markers,
+manifest and prose change none of it. A =RULE_AT= in a gap record, and the =DECLARED_AT= on a
+displayed spoke or member, name the atom and the line in it, in both forms. A plain
+single file without markers (the 0.2.0 form) still works and cites =line N=.
+
+** Reading a composed file: the manifest and STALE
+
+A composed file is fine to depend on only if reading it always pulls in the atoms and cannot
+ignore a change that should be included. So every command that reads a composed file first checks
+its manifest, against the atoms in the file itself and against the atoms beside it (for =X.org=,
+the directory =X.d=):
+
+| Found                                                      | Result                                                       |
+|------------------------------------------------------------+--------------------------------------------------------------|
+| an atom beside it, or in the file, differs from its hash   | refused: =STALE: PATH changed since compose=                 |
+| an atom beside it is not in the manifest                   | refused: =STALE: PATH added since compose=                   |
+| an atom in the manifest is gone                            | refused: =STALE: PATH removed since compose=                 |
+| the identity read is not the one the manifest states       | refused: =STALE: the identity ... differs from its manifest= |
+| no atoms beside it                                         | read; stderr: =composed file read without its atoms; freshness not checked= |
+| no manifest in the file                                    | read; stderr: =composed file has no manifest; freshness not checked= |
+
+Every stale atom is named, not only the first. Nothing is printed from the stale text.
+The cure is =orgfs compose= again, or, if the composed text is what you meant to change,
+=orgfs decompose= it (which does not check the manifest, being the way back).
+
 * Views and gaps
 
 =orgfs materialize DECL --as HOST= writes the view HOST may have of the declaration, as Org
@@ -242,7 +379,7 @@ incomplete gap is refused when it is made, and =orgfs routes= refuses one it is 
 | =WHAT_KIND=  | what sort of thing is missing                                                          |
 | =WHAT_SHAPE= | its shape, never its content ("1 absolute path, 4 components")                         |
 | =RULE=       | the rule that left it out                                                              |
-| =RULE_AT=    | =line N (:KEY:)= of the declaration that states the rule, or =not in the declaration:= and where it is stated |
+| =RULE_AT=    | =ATOM line N (:KEY:)= (or =line N (:KEY:)= in a plain file) that states the rule, or =not in the declaration:= and where it is stated |
 | =HOW=        | what the tool did                                                                      |
 | =WHY=        | why                                                                                    |
 | =REACH=      | who could reach it                                                                     |
@@ -293,6 +430,8 @@ name is the SHA-256 of the whole file.
 
 | Command                                                | Does                                                      |
 |--------------------------------------------------------+-----------------------------------------------------------|
+| =orgfs compose DIR [--out FILE]=                       | build the one literate file from the atoms in DIR (with a manifest) |
+| =orgfs decompose FILE DIR=                             | split a composed file back into atoms, byte for byte      |
 | =orgfs check DECL [--spoke S] [--no-mounts]=           | parse, sanity-check, verify roots; print identities       |
 | =orgfs plan DECL [--spoke S] [--as HOST]=              | stripe -> holders; with =--as=, only the stripes HOST holds |
 | =orgfs agree DECL OTHER... [--spoke S]=                | refuse unless every identity is the same                  |
@@ -307,6 +446,8 @@ name is the SHA-256 of the whole file.
 | =orgfs site DECL OUT=                                  | static HTML site: no script, no inline style, one CSS file |
 | =orgfs demo [DIR]=                                     | three spokes over local directories, end to end           |
 
+DECL is, everywhere, an atom directory or a composed (or plain) file.
+
 =put= needs every member of the spoke usable and refuses an sshfs root that is not a mounted
 mount point (an unmounted sshfs directory is just a local directory). =get= and =verify=
 tolerate unreachable members; =get= warns loudly (=CORRUPT slice ...=) about any copy that
@@ -315,7 +456,8 @@ does not match the manifest and fails if no good copy exists or the bytes do not
 * Quick start
 
 #+BEGIN_SRC sh
-make check          # four test modules at once, in Python, driving bin/orgfs as a black box
+make compose        # examples/licensing.org, composed from examples/licensing.d
+make check          # five test modules at once, in Python, driving bin/orgfs as a black box
 make prove-red      # plant faults on a copy; each must turn a test red (long)
 make demo           # three spokes (public, private, sealed) over local directories
 make site           # writes _site/
@@ -341,7 +483,9 @@ server is run, so configure the server to match.
 
 * Tests
 
-=tests/run_all.py= runs the four modules at once. =test_orgfs.py= (declaration, plan, store, site)
+=tests/run_all.py= runs the five modules at once. =test_atoms.py= (compose, decompose, the byte-for-byte
+round trip, one identity in both forms, =RULE_AT= naming the atom and a line that really is in it, the
+manifest and =STALE=) computes the manifest again with =hashlib= and the identity with a second implementation. =test_orgfs.py= (declaration, plan, store, site)
 computes the rendezvous plan again, independently, so the tool's hashing is checked against a
 second implementation. =test_views.py= works out which gap records each host must be shown and
 which strings it must never see, from the rules above, and runs every route in a gap to check
@@ -375,8 +519,15 @@ built, or a run could deploy without all three steps green.
 - The /root-owned/ clause of =orgfs layout= was only exercised if the tests ran as root; as a
   normal user they exercise the group clauses and the broken case. LDAP and other account
   sources were not tried.
-- The single run of =make prove-red= to its =PROVE-RED OK (38 of 38 ...)= line. It was run in six
-  ranges, each ending with every fault in it caught and the control passed.
+@@PROVE@@
+- Coverage over time (his 20:57 square): designed, not built. Each point in time defines a square of
+  row identities by column selections; everything inside it is covered unless it is a gap record or a
+  stated exception to scope. Next round.
+- Emacs: nobody opened a composed file in Emacs, so "Emacs reads it as ordinary Org" is an
+  expectation from the markers being comments. A =#+INCLUDE:= form of the composition was not built.
+- That =decompose= keeps a CRLF or non-UTF-8 atom intact on Windows: the byte tests ran on Linux (awk
+  =printf "%s\n"=); a NUL byte in an atom would not survive awk.
+- The manifest is a hash, not a signature (see the concern above).
 - busybox's own awk (only gawk and mawk were tried), macOS and BSD (=ls -ldn=, =sha256sum=), and
   any shell other than dash, bash 5.1 and busybox 1.30 ash.
 - How the site looks in a browser or on paper: the contrast ratios and the presence of the

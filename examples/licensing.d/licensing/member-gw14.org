@@ -1,0 +1,5 @@
+** member gw14
+:PROPERTIES:
+:ROOT: /spokes/gw14/storage
+:TRANSPORT: sshfs
+:END:

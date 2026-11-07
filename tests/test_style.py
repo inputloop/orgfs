@@ -40,7 +40,7 @@ class StyleTests(unittest.TestCase):
     def setUpClass(cls):
         cls._td = tempfile.TemporaryDirectory()
         cls.out = os.path.join(cls._td.name, "site")
-        rc, so, err = orgfs("site", os.path.join(T.ROOT_DIR, "examples", "licensing.org"), cls.out)
+        rc, so, err = orgfs("site", os.path.join(T.ROOT_DIR, "examples", "licensing.d"), cls.out)
         assert rc == 0, err
         with open(os.path.join(cls.out, "orgfs.css")) as f:
             cls.css = f.read()

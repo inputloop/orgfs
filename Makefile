@@ -4,7 +4,7 @@ PYTHON ?= python3
 SHELLS ?= dash bash "busybox sh"
 AWKS   ?= gawk mawk
 
-.PHONY: check check-shells prove-red site demo clean
+.PHONY: check check-shells prove-red site demo compose clean
 
 check:
 	sh -n bin/orgfs
@@ -21,7 +21,11 @@ prove-red:
 	$(PYTHON) tests/prove_red.py
 
 site:
-	sh bin/orgfs site examples/licensing.org _site
+	sh bin/orgfs site examples/licensing.d _site
+
+# the composed file is generated from the atoms; it is not kept in git
+compose:
+	sh bin/orgfs compose examples/licensing.d --out examples/licensing.org
 
 demo:
 	sh bin/orgfs demo

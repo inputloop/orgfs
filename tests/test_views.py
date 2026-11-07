@@ -575,7 +575,7 @@ class MultiSpokeTests(unittest.TestCase):
         self.assertEqual(re.search(r"(?m)^file-identity\t(\w+)$", out).group(1), ref_file_identity(want))
 
     def test_0_1_0_identity_of_a_single_spoke_is_unchanged(self):
-        out = orgfs("check", os.path.join(T.ROOT_DIR, "examples", "licensing.org"), "--no-mounts")[1]
+        out = orgfs("check", os.path.join(T.ROOT_DIR, "examples", "licensing.d"), "--no-mounts")[1]
         self.assertIn("identity\t1df8d78c7e2b291b459ee275c505504e655e75ee2e1693eeabe98e23c319e013", out)
 
     def test_file_identity_ignores_spoke_order_prose_and_member_order(self):

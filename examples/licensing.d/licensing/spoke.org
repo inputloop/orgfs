@@ -1,0 +1,7 @@
+* spoke licensing
+:PROPERTIES:
+:RING: GREAT
+:STRIPES: 5
+:REPLICAS: 2
+:VISIBILITY: public
+:END:

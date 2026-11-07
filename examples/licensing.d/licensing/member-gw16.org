@@ -1,0 +1,5 @@
+** member gw16
+:PROPERTIES:
+:ROOT: /spokes/gw16/storage
+:TRANSPORT: sshfs
+:END:
