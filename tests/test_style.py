@@ -45,7 +45,7 @@ class StyleTests(unittest.TestCase):
         with open(os.path.join(cls.out, "orgfs.css")) as f:
             cls.css = f.read()
         cls.pages = {}
-        for n in ("index.html", "gaps.html", "licensing.html", "rights.html"):
+        for n in ("index.html", "made.html", "gaps.html", "licensing.html", "rights.html"):
             with open(os.path.join(cls.out, n), encoding="utf-8") as f:
                 cls.pages[n] = f.read()
 
@@ -131,13 +131,13 @@ class StyleTests(unittest.TestCase):
             self.assertEqual(html.count('class="status"'), 1, n)
             self.assertRegex(html, r"<h2>Not checked</h2>", n)
             self.assertTrue(html.index('class="status"') < html.index("<h2>"), n)
-        idx = self.pages["index.html"]
+        made = self.pages["made.html"]
         for h in ("What you get", "What was asked", "What was observed", "What was judged"):
-            self.assertIn("<h2>%s</h2>" % h, idx)
-        self.assertTrue(idx.index("What you get") < idx.index("What was asked") < idx.index("What was observed") < idx.index("What was judged"))
+            self.assertIn("<h2>%s</h2>" % h, made)
+        self.assertTrue(made.index("What you get") < made.index("What was asked") < made.index("What was observed") < made.index("What was judged"))
 
     def test_judged_items_carry_a_falsifier(self):
-        for n in ("index.html", "gaps.html"):
+        for n in ("made.html", "gaps.html"):
             html = self.pages[n]
             judged = re.search(r"<h2>What was judged</h2>(.*?)<h2>", html, re.S).group(1)
             items = re.findall(r"<li>(.*?)</li>", judged, re.S)
@@ -146,7 +146,7 @@ class StyleTests(unittest.TestCase):
                 self.assertRegex(it, r"[Ww]ould be wrong", it)
 
     def test_quotes_are_short_and_dated(self):
-        idx = self.pages["index.html"]
+        idx = self.pages["made.html"]
         self.assertIn("2026-11-06", idx)
         for q in re.findall(r"<blockquote>(.*?)</blockquote>", idx, re.S):
             self.assertLess(len(re.sub(r"<[^>]+>", "", q)), 700)
@@ -189,11 +189,21 @@ class StyleTests(unittest.TestCase):
         for (s, h), root in w.roots.items():
             if s != "pub":
                 self.assertNotIn(root, idx, (s, h))
-        self.assertIn("Spoke sealed: withheld", idx)
-        self.assertNotIn("h5", re.sub(r"[0-9a-f]{64}", "", idx))
+        with open(os.path.join(out, "made.html")) as f:
+            made = f.read()
+        self.assertIn("Spoke sealed: withheld", made)
+        self.assertNotIn("Spoke sealed: withheld", idx)
+        self.assertIn("sealed", idx)
+        for page in (idx, made):
+            self.assertNotIn("h5", re.sub(r"[0-9a-f]{64}", "", page))
         self.assertFalse(os.path.exists(os.path.join(out, "declaration.org")))
-        self.assertIn("Spoke pub", idx)
-        self.assertIn(w.roots[("pub", "h1")], idx)
+        self.assertIn("Spoke <em>pub</em>", idx)
+        self.assertIn("Spoke pub", made)
+        self.assertIn(w.roots[("pub", "h1")], made)
+        self.assertNotIn(w.roots[("pub", "h1")], idx)   # the home page names machines, not their paths
+        for (s, h), root in w.roots.items():
+            if s != "pub":
+                self.assertNotIn(root, made, (s, h))
 
 
 if __name__ == "__main__":

@@ -445,14 +445,14 @@ class SiteTests(Base):
 
     def pages(self, out):
         res = {}
-        for n in ("index.html", "gaps.html", "licensing.html", "rights.html"):
+        for n in ("index.html", "made.html", "gaps.html", "licensing.html", "rights.html"):
             with open(os.path.join(out, n), encoding="utf-8") as f:
                 res[n] = f.read()
         return res
 
     def test_files_and_semantics(self):
         out = self.render()
-        for n in ("index.html", "gaps.html", "licensing.html", "rights.html", "orgfs.css", "licensing.tsv",
+        for n in ("index.html", "made.html", "gaps.html", "licensing.html", "rights.html", "orgfs.css", "licensing.tsv",
                   "licensing.txt", "view-visitor.org"):
             self.assertTrue(os.path.exists(os.path.join(out, n)), n)
         for n, html in self.pages(out).items():
@@ -461,12 +461,12 @@ class SiteTests(Base):
             for tag in ("<title>", "<main", "<nav", "<header>", "<footer>", "<h1>", 'class="skip"'):
                 self.assertIn(tag, html, (n, tag))
             self.assertEqual(html.count("<h1>"), 1, n)
-        idx = self.pages(out)["index.html"]
-        self.assertIn("<caption>", idx)
-        self.assertIn('<th scope="col">', idx)
-        self.assertIn(self.hosts[0], idx)
-        self.assertEqual(idx.count("<tr><th scope=\"row\">") - len(self.hosts), 5)  # members + 5 stripes
-        self.assertIn(orgfs("check", self.decl)[1].split("identity\t")[1][:64], idx)
+        made = self.pages(out)["made.html"]
+        self.assertIn("<caption>", made)
+        self.assertIn('<th scope="col">', made)
+        self.assertIn(self.hosts[0], made)
+        self.assertEqual(made.count("<tr><th scope=\"row\">") - len(self.hosts), 5)  # members + 5 stripes
+        self.assertIn(orgfs("check", self.decl)[1].split("identity\t")[1][:64], made)
 
     def test_no_script_no_style_attr_no_external_load(self):
         out = self.render()
@@ -506,8 +506,8 @@ class SiteTests(Base):
 
     def test_private_hides_roots_and_sealed_is_only_a_name(self):
         out = self.render(vis="private")
-        idx = self.pages(out)["index.html"]
-        self.assertNotIn(self.d, idx)
+        for n in ("index.html", "made.html"):
+            self.assertNotIn(self.d, self.pages(out)[n], n)
         self.assertFalse(os.path.exists(os.path.join(out, "declaration.org")))
         out = self.render(vis="public")
         self.assertTrue(os.path.exists(os.path.join(out, "declaration.org")))
@@ -516,11 +516,12 @@ class SiteTests(Base):
         out = os.path.join(self.d, "s2")
         rc, _, err = orgfs("site", self.decl, out)
         self.assertEqual(rc, 0, err)
-        with open(os.path.join(out, "index.html")) as f:
-            idx = f.read()
-        self.assertIn("Spoke t: withheld", idx)
-        for h in self.hosts:
-            self.assertNotIn(self.roots[h], idx)
+        for n in ("index.html", "made.html"):
+            with open(os.path.join(out, n)) as f:
+                idx = f.read()
+            for h in self.hosts:
+                self.assertNotIn(self.roots[h], idx, n)
+        self.assertIn("Spoke t: withheld", idx)   # made.html, the last one read
         self.assertFalse(os.path.exists(os.path.join(out, "declaration.org")))
 
     def test_html_escaping_of_roots(self):
@@ -531,10 +532,131 @@ class SiteTests(Base):
         out = os.path.join(self.d, "se")
         rc, _, err = orgfs("site", p, out)
         self.assertEqual(rc, 0, err)
-        with open(os.path.join(out, "index.html")) as f:
+        with open(os.path.join(out, "made.html")) as f:
             idx = f.read()
         self.assertIn("a&amp;b", idx)
         self.assertNotIn("a&b", idx)
+
+
+    # ---------------------------------------------------------- the home page tells the story
+    def text_of(self, html):
+        t = re.sub(r"<[^>]+>", " ", html[max(html.find("<main"), 0):])
+        return re.sub(r"\s+", " ", t)
+
+    def test_home_leads_with_the_example_as_a_story(self):
+        idx = self.pages(self.render())["index.html"]
+        h2 = re.findall(r"<h2>(.*?)</h2>", idx)
+        self.assertEqual(h2[0], "An example")
+        self.assertEqual(h2[:5], ["An example", "What happens to a file", "Nothing hidden without a reason", "Try it", "How this was made"])
+        self.assertLess(idx.index("<h1>"), idx.index("<h2>"))
+        self.assertIn('<a href="declaration.html">Read the declaration as a story</a>', idx)
+        self.assertIn('<a href="declaration.org">', idx)
+        self.assertIn('<a href="made.html">', idx)
+        self.assertEqual(idx.count('class="status"'), 1)
+        for old in ("What was asked", "What was observed", "What was judged", "double linkage", "choice"):
+            self.assertNotIn(old, idx)
+
+    def test_home_without_a_public_declaration_says_so(self):
+        out = self.render(vis="private")
+        idx = self.pages(out)["index.html"]
+        self.assertNotIn("declaration.html", idx)
+        self.assertNotIn('href="declaration.org"', idx)
+        self.assertIn("is not published because at least one spoke in it is not public", idx)
+        self.assertEqual(re.findall(r"<h2>(.*?)</h2>", idx)[0], "An example")
+
+    def test_home_counts_come_from_the_declaration(self):
+        for stripes, replicas, lose in ((7, 3, "any 2 machines can be lost"), (4, 1, "losing any machine loses part of the file"),
+                                         (3, 2, "one machine can be lost")):
+            idx = self.pages(self.render(stripes=stripes, replicas=replicas))["index.html"]
+            text = self.text_of(idx)
+            self.assertIn("cuts it into %d pieces." % stripes, text)
+            self.assertIn("kept on %d of the 5 machines" % replicas, text)
+            self.assertIn(lose, text)
+            table = re.search(r"<tbody>(.*?)</tbody>", idx, re.S).group(1)
+            self.assertEqual(table.count("<tr>"), stripes)
+            plan = ref_plan("t", self.hosts, stripes, replicas)
+            rows = re.findall(r"<tr><th scope=\"row\">(\d+)</th>(.*?)</tr>", table)
+            for i, cells in rows:
+                held = [h for h, c in zip(self.hosts, re.findall(r"<td class=\"(yes|no)\">", cells)) if c == "yes"]
+                self.assertEqual(held, plan[int(i)], (stripes, replicas, i))
+
+    def test_the_scoring_rule_is_on_made_html_not_on_the_home_page(self):
+        pages = self.pages(self.render())
+        for leak in ("spoke|stripe|member", "SHA-256", "sha256", "highest score"):
+            self.assertNotIn(leak, pages["index.html"], leak)
+        self.assertIn("spoke|stripe|member", pages["made.html"])
+
+    def test_the_story_is_the_declarations_own_words(self):
+        prose = "* Why it exists\nLead line here.\n\nAlpha beta gamma. Delta epsilon zeta. Eta theta iota.\n"
+        idx = self.pages(self.render(prose=prose))["index.html"]
+        self.assertIn("Alpha beta gamma. Delta epsilon zeta.", idx)
+        self.assertNotIn("Eta theta iota", idx)
+        self.assertNotIn("Lead line here", idx)
+        self.assertNotIn("orgfs stands on other people", idx)   # the example's words are not hard-coded
+        # and a private declaration's prose is not carried onto a public page
+        idx = self.pages(self.render(prose=prose, vis="private"))["index.html"]
+        self.assertNotIn("Alpha beta gamma", idx)
+
+    def test_nav_has_made_in_its_place_and_marks_the_current_page(self):
+        out = self.render()
+        order = ["About", "The declaration", "How this was made", "A view with its gaps", "Licensing stack", "Your rights on this site"]
+        pages = dict(self.pages(out))
+        for n, html in pages.items():
+            nav = re.search(r"<nav.*?</nav>", html, re.S).group(0)
+            self.assertEqual(re.findall(r"<a [^>]*>(.*?)</a>", nav), order, n)
+            cur = re.findall(r'<a href="([^"]+)" aria-current="page"', nav)
+            self.assertEqual(cur, [n], n)
+        out = self.render(vis="private")
+        nav = re.search(r"<nav.*?</nav>", self.pages(out)["made.html"], re.S).group(0)
+        self.assertNotIn("The declaration", nav)
+        self.assertIn('<a href="made.html" aria-current="page">How this was made</a>', nav)
+
+    def test_made_html_keeps_the_working_records_in_the_shops_forms(self):
+        made = self.pages(self.render())["made.html"]
+        h2 = re.findall(r"<h2>(.*?)</h2>", made)
+        self.assertEqual(h2, ["The origination and curation story", "What you get", "What was asked", "What was observed", "What was judged", "Not checked"])
+        self.assertIn("2026-11-06", made)
+        self.assertIn("2026-11-07", made)
+        self.assertIn("what will others see, here?", made.replace("&quot;", '"'))
+        self.assertIn("Tested on Linux", made)
+
+    def test_made_html_opens_with_the_framing_for_an_emacs_user(self):
+        made = self.pages(self.render())["made.html"]
+        first = made[made.index("<h2>"):made.index("<h2>What you get</h2>")]
+        self.assertTrue(first.startswith("<h2>The origination and curation story</h2>"))
+        self.assertLess(made.index('class="status"'), made.index("<h2>"))
+        text = self.text_of(first)
+        for phrase in ("vibe-coded", "what was asked", "what was observed", "what was judged", "Emacs",
+                       "a second reader over any system it runs on", "2026-11-07"):
+            self.assertIn(phrase, text)
+        self.assertIn('href="https://github.com/inputloop/orgfs/blob/main/tests/org_check.el"', first)
+        self.assertIn('<a href="/ci/">', first)
+        self.assertTrue(os.path.exists(os.path.join(ROOT_DIR, "tests", "org_check.el")))
+        self.assertNotRegex(first, r"Org \d|Emacs \d")      # no version is invented; the log names them
+        self.assertEqual(first.count("<p>"), 2)
+        idx = self.pages(self.render())["index.html"]
+        self.assertRegex(self.text_of(idx), r"how Emacs checks it")
+        self.assertIn('<a href="made.html">their own page</a>', idx)
+
+    def test_the_try_it_commands_exist(self):
+        idx = self.pages(self.render())["index.html"]
+        pre = re.search(r"<pre[^>]*>(.*?)</pre>", idx, re.S).group(1).splitlines()
+        usage = orgfs("--help")[1] + orgfs("--help")[2]
+        with open(os.path.join(ROOT_DIR, "Makefile")) as f:
+            mk = f.read()
+        seen = 0
+        for line in pre:
+            m = re.match(r"sh bin/orgfs (\w+) (\S+)$", line)
+            if m:
+                seen += 1
+                self.assertRegex(usage, r"(?m)^  %s " % m.group(1))
+                rc, _, err = orgfs(m.group(1), os.path.join(ROOT_DIR, m.group(2)))
+                self.assertEqual(rc, 0, (line, err))
+            elif line.startswith("make "):
+                self.assertRegex(mk, r"(?m)^%s:" % line.split()[1])
+        self.assertEqual(seen, 2)
+        self.assertIn("git clone https://github.com/inputloop/orgfs", pre[0])
+        self.assertIn('href="https://github.com/inputloop/orgfs"', idx)
 
 
 class DemoTests(unittest.TestCase):

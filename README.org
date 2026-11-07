@@ -7,10 +7,15 @@
 Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors.
 Code: GPL-3.0-or-later (see =COPYING=). Prose, including this file: CC-BY-SA-4.0.
 
-*Status:* orgfs 0.4.0, 2026-11-07, before 1.0. Tested on Linux only; Windows, macOS and the BSDs are not yet tested. 210 tests passed here
-(=make check=, as a normal user; as root two layout tests fail, see NOT CHECKED); the Emacs check ran here on Emacs 29.3 with Org 9.6.15, and has not yet run on the Org 9.5.5 that CI has. 66 planted
+*Status:* orgfs 0.4.0, 2026-11-07, before 1.0. Tested on Linux only; Windows, macOS and the BSDs are not yet tested. 219 tests passed here
+(=make check=, as a normal user; as root two layout tests fail, see NOT CHECKED); the Emacs check ran here on Emacs 29.3 with Org 9.6.15, and has not yet run on the Org 9.5.5 that CI has. 87 planted
 faults were each caught (two of them need Emacs). Nothing has run on a ghostwheel host yet. See
 [[*What was observed][What was observed]] for the commands and [[*NOT CHECKED][NOT CHECKED]] for what was not.
+
+The site's home page was reworked on 2026-11-07 at Corwin's 09:21 word, so that it tells the example as a story and the working
+records moved to a page of their own (=made.html=): "It's awesome. The most confusing thing left (to the m1 eyeball set at wide-angle
+"what will others see, here?") is the story told by the home page." At 09:32 he asked that the second page be treated as first-class,
+the origination and curation story for an Emacs user.
 
 * What you get
 
@@ -567,7 +572,8 @@ gawk and mawk (slow). Or by hand: =ORGFS_SHELL=dash ORGFS_AWK=mawk python3 tests
 
 ** The site
 
-=orgfs site= renders =index.html= (what orgfs is, the declaration, one members table and plan
+=orgfs site= renders =index.html= (the home page: what orgfs is, the example told as a story, what happens to a file with the plan table, gap records, how to try it),
+=made.html= (How this was made: the origination and curation story, what was asked in his words, observed, judged, NOT CHECKED, the scoring rule, one members table and plan
 table per spoke), =declaration.html= (the composed story, when every spoke in it is public), =gaps.html= (a demo view for a visitor host, every gap in a table, one gap and
 one fetched item in full), =licensing.html= (the register), =rights.html= (Your rights on this
 site), =orgfs.css= and =view-visitor.org=. A private spoke's roots and a sealed spoke's
@@ -622,6 +628,10 @@ built, or a run could deploy without all three steps green.
 
 * NOT CHECKED
 
+- The home page rework (2026-11-07, at his 09:21 word: "It's awesome. The most confusing thing left (to the m1 eyeball set at wide-angle
+  "what will others see, here?") is the story told by the home page."): that a newcomer who lands on orgfs.com understands what orgfs is
+  from it. The tests check the page's order, the links, the numbers taken from the declaration and the absence of the scoring rule; nobody
+  but its author has read it as a stranger, and nobody looked at it rendered.
 - Anything on a ghostwheel host. Hosts in the tests are local directories; no real sshfs mount
   was made, and mount detection reads =/proc/mounts= (override: =ORGFS_MOUNTS=).
 - The /root-owned/ clause of =orgfs layout= was only exercised if the tests ran as root; as a

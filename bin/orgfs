@@ -1561,6 +1561,7 @@ td.no { color: var(--mut); }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1.25rem; }
 dt { font-weight: 700; }
 dd { margin: 0; overflow-wrap: anywhere; }
+.go { font-size: var(--s1); font-weight: 700; }
 .gap { border: 2px solid var(--rule); border-left-width: 8px; padding: .75rem 1rem 0; margin: 0 0 var(--sp); }
 .gap h3 { margin-top: 0; }
 footer { border-top: 2px solid var(--rule); margin-top: calc(var(--sp) * 2); padding-top: .75rem; color: var(--mut); font-size: var(--s-1); }
@@ -1638,6 +1639,7 @@ html_head() { # TITLE PAGE
 <ul>
 <li><a href="index.html"$(cur index "$2")>About</a></li>
 $([ "${_allpublic:-0}" != 1 ] || printf '<li><a href="declaration.html"%s>The declaration</a></li>\n' "$(cur declaration "$2")")
+<li><a href="made.html"$(cur made "$2")>How this was made</a></li>
 <li><a href="gaps.html"$(cur gaps "$2")>A view with its gaps</a></li>
 <li><a href="licensing.html"$(cur licensing "$2")>Licensing stack</a></li>
 <li><a href="rights.html"$(cur rights "$2")>Your rights on this site</a></li>
@@ -1658,6 +1660,157 @@ Source: <a href="https://github.com/inputloop/orgfs">github.com/inputloop/orgfs<
 </footer>
 </body>
 </html>
+EOF
+}
+
+plur() { # N SINGULAR PLURAL
+  if [ "$1" = 1 ]; then printf '1 %s' "$2"; else printf '%s %s' "$1" "$3"; fi
+}
+names_of() { printf '%s\n' "$MEMBERS" | tr '\n' ' ' | sed 's/ $//; s/ /, /g' | esc; }
+
+# the Nth paragraph (else the first) of the first LEVEL heading whose title holds WORD:
+# its first K sentences, escaped for HTML; nothing when there is no such heading
+DECL_PROSE_AWK='
+function flush() { if (cur != "") { np++; P[np] = cur; cur = "" } }
+function sent(s, kk,   out, rest, piece, i) {
+  out = ""; rest = s
+  for (i = 1; i <= kk && rest != ""; i++) {
+    if (match(rest, /[.!?] +[A-Z]/)) { piece = substr(rest, 1, RSTART); rest = substr(rest, RSTART + RLENGTH - 1) }
+    else { piece = rest; rest = "" }
+    out = out (out == "" ? "" : " ") piece
+  }
+  return out
+}
+BEGIN { st = 0; np = 0; cur = ""; indr = 0 }
+st == 2 { next }
+/^\*+ / {
+  n = 0; while (substr($0, n + 1, 1) == "*") n++
+  if (st == 1) { flush(); st = 2; next }
+  if (n == lvl + 0 && tolower($0) ~ w) { st = 1; indr = 0 }
+  next }
+st != 1 { next }
+/^:PROPERTIES:/ { indr = 1; next }
+indr { if ($0 == ":END:") indr = 0; next }
+/^#\+/ || /^\|/ { next }
+/^[ \t]*$/ { flush(); next }
+{ cur = (cur == "" ? $0 : cur " " $0) }
+END { flush(); i = (np >= n_want + 0) ? n_want + 0 : np; if (i >= 1) print sent(P[i], k + 0) }
+'
+decl_prose() { # FILE LEVEL WORD N K
+  $AWK -v lvl="$2" -v w="$3" -v n_want="$4" -v k="$5" "$DECL_PROSE_AWK" "$1" | esc | sed 's#=\([^= ][^=]*\)=#<code>\1</code>#g'
+}
+
+# the plan of the loaded spoke as a table; made: the working record's words, home: the story's
+site_plan_table() { # made|home
+  make_plan
+  if [ "$1" = home ]; then _cap="Which machine holds which piece of spoke $_e"; _hd=Piece
+  else _cap="Which member holds which stripe of spoke $_e"; _hd=Stripe; fi
+  cat <<EOF
+<div class="scroll" role="region" aria-label="Plan of spoke $_e" tabindex="0">
+<table>
+<caption>$_cap</caption>
+<thead><tr><th scope="col">$_hd</th>
+EOF
+  for _h in $MEMBERS; do printf '<th scope="col">%s</th>' "$(esc_s "$_h")"; done
+  printf '</tr></thead>\n<tbody>\n'
+  $AWK -F'\t' -v members="$(printf '%s' "$MEMBERS" | tr '\n' ' ')" '
+    BEGIN { nm = split(members, m, " ") }
+    { split("", hold); n = split($2, a, " "); for (k = 1; k <= n; k++) hold[a[k]] = 1
+      printf "<tr><th scope=\"row\">%s</th>", $1
+      for (k = 1; k <= nm; k++) printf "%s", (m[k] in hold) ? "<td class=\"yes\">holds</td>" : "<td class=\"no\">no</td>"
+      printf "</tr>\n" }' "$TMP/plan"
+  cat <<EOF
+</tbody>
+</table>
+</div>
+EOF
+}
+
+# the home page: the story first; the shop's working records are on made.html
+site_home() {
+  _nplural=spokes; [ "$NSP" != 1 ] || _nplural=spoke
+  cat <<EOF
+<h1>orgfs</h1>
+<p>orgfs keeps one set of files safely across several machines. One plain Org file describes the arrangement and tells its own story as it goes, and nothing is left out of what you are shown without a note that says why.</p>
+<p class="status">Status: orgfs $VERSION, before 1.0. Tested on Linux only (not yet on Windows, macOS or the BSDs). Nothing on this page says the tests passed; run <code>make check</code>. The working records are on <a href="made.html">How this was made</a>.</p>
+
+<h2>An example</h2>
+EOF
+  _who=
+  for _s in $SPOKES; do
+    load_spoke "$_s"
+    if [ "$VIS" = sealed ]; then _w="Spoke $(esc_s "$_s") is sealed, so only its name is shown."
+    else
+      if [ "$(n_members)" = 1 ]; then _w="1 machine takes part in it: $(names_of)."; else _w="$(n_members) machines take part in it: $(names_of)."; fi
+      _w="Spoke <em>$(esc_s "$_s")</em> is a named place where files are kept, and $_w"
+    fi
+    _who="$_who $_w"
+  done
+  printf '<p>%s</p>\n' "${_who# }"
+  _why=
+  [ "$_allpublic" != 1 ] || _why=$(decl_prose "$_out/declaration.org" 1 "" 2 2)
+  if [ -n "$_why" ]; then printf '<p>%s</p>\n' "$_why"
+  else printf '<p>This site was built from a declaration of %s %s.</p>\n' "$NSP" "$_nplural"; fi
+  if [ "$_allpublic" = 1 ]; then
+    cat <<EOF
+<p class="go"><a href="declaration.html">Read the declaration as a story</a></p>
+<p>The same text, as the Org file itself: <a href="declaration.org">declaration.org</a>.</p>
+EOF
+  else
+    cat <<EOF
+<p>The declaration file is not published because at least one spoke in it is not public.</p>
+EOF
+  fi
+  cat <<EOF
+
+<h2>What happens to a file</h2>
+<p>The declaration says <em>stripe</em> where this page says <em>piece</em>, and <em>member</em> where this page says <em>machine</em>.</p>
+EOF
+  for _s in $SPOKES; do
+    load_spoke "$_s"; _e=$(esc_s "$SPOKE")
+    [ "$NSP" = 1 ] || printf '<h3>Spoke %s</h3>\n' "$_e"
+    if [ "$VIS" = sealed ]; then
+      printf '<p>This spoke is sealed: how it spreads files is not shown.</p>\n'
+      continue
+    fi
+    case $REPLICAS in
+      1) _lose="so losing any machine loses part of the file";;
+      2) _lose="so one machine can be lost and the file can still be put back together";;
+      *) _lose="so any $((REPLICAS - 1)) machines can be lost and the file can still be put back together";;
+    esac
+    printf '<p>Put a file into the spoke and orgfs cuts it into %s. Each piece is kept on %s of the %s machines, %s.</p>\n' \
+      "$(plur "$STRIPES" piece pieces)" "$REPLICAS" "$(n_members)" "$_lose"
+    printf '<p>Read the table by rows: each row is one piece, and a machine marked <em>holds</em> keeps a copy of it.</p>\n'
+    site_plan_table home
+  done
+  _kb=
+  [ "$_allpublic" != 1 ] || _kb=$(decl_prose "$_out/declaration.org" 2 "kept back" 2 2)
+  cat <<EOF
+
+<h2>Nothing hidden without a reason</h2>
+<p>Sometimes a machine cannot be shown everything: a spoke may be private or sealed, or a member&#39;s storage may be out of reach of the machine that builds the view. orgfs does not leave such a thing out quietly. It writes a <em>gap record</em> in its place, and the record says what is missing (its kind and shape, never its content), why, which line of the declaration says so, and who could reach it and by which command.</p>
+EOF
+  [ -z "$_kb" ] || printf '<p>In the example: %s</p>\n' "$_kb"
+  cat <<EOF
+<p>See <a href="gaps.html">a demonstration view with every gap listed</a>.</p>
+
+<h2>Try it</h2>
+<p>You need a shell, awk and Python 3. Emacs is optional; with it one more check runs.</p>
+<pre tabindex="0">git clone https://github.com/inputloop/orgfs
+cd orgfs
+make check
+sh bin/orgfs compose examples/licensing.d
+sh bin/orgfs plan examples/licensing.d</pre>
+<p>The first <code>orgfs</code> command prints the example declaration as one Org file; the second prints which machine holds which piece (it says stripes).</p>
+
+<h2>How this was made</h2>
+<p>How this was made, and how Emacs checks it: what we were asked in Corwin&#39;s own words, what we observed and by which command, what we judged and how each judgement could be shown wrong, and Emacs reading every composed file as a second reader before each deploy, are on <a href="made.html">their own page</a>, apart from this story.</p>
+
+<h2>Not checked</h2>
+<ul>
+<li>Anything on a real ghostwheel host: the tests use local directories for hosts.</li>
+<li>That a browser shows this page as intended in any particular browser or printer.</li>
+</ul>
 EOF
 }
 
@@ -1701,28 +1854,7 @@ EOF
     else _root="withheld (private spoke; see the gap records)"; fi
     printf '<tr><th scope="row">%s</th><td>%s</td><td>%s</td></tr>\n' "$(esc_s "$_h")" "$(esc_s "$(tr_of "$_h")")" "$_root"
   done
-  cat <<EOF
-</tbody>
-</table>
-</div>
-<div class="scroll" role="region" aria-label="Plan of spoke $_e" tabindex="0">
-<table>
-<caption>Which member holds which stripe of spoke $_e</caption>
-<thead><tr><th scope="col">Stripe</th>
-EOF
-  for _h in $MEMBERS; do printf '<th scope="col">%s</th>' "$(esc_s "$_h")"; done
-  printf '</tr></thead>\n<tbody>\n'
-  $AWK -F'\t' -v members="$(printf '%s' "$MEMBERS" | tr '\n' ' ')" '
-    BEGIN { nm = split(members, m, " ") }
-    { split("", hold); n = split($2, a, " "); for (k = 1; k <= n; k++) hold[a[k]] = 1
-      printf "<tr><th scope=\"row\">%s</th>", $1
-      for (k = 1; k <= nm; k++) printf "%s", (m[k] in hold) ? "<td class=\"yes\">holds</td>" : "<td class=\"no\">no</td>"
-      printf "</tr>\n" }' "$TMP/plan"
-  cat <<EOF
-</tbody>
-</table>
-</div>
-EOF
+  site_plan_table made
 }
 
 cmd_site() {
@@ -1737,11 +1869,26 @@ cmd_site() {
   _allpublic=1
   for _s in $SPOKES; do load_spoke "$_s"; [ "$VIS" = public ] || _allpublic=0; done
   _nplural=spokes; [ "$NSP" != 1 ] || _nplural=spoke
+  if [ "$_allpublic" = 1 ]; then
+    if [ -d "$_decl" ]; then ( compose_dir "$_decl" "$_out/declaration.org" m ) || die "site: cannot compose $_decl"
+    else cp "$DECLFILE" "$_out/declaration.org"; fi
+  fi
   {
     html_head "About" index
+    site_home
+    html_foot
+  } > "$_out/index.html"
+  {
+    html_head "How this was made" made
     cat <<EOF
-<h1>orgfs</h1>
+<h1>How this was made</h1>
 <p class="status">Status: orgfs $VERSION, before 1.0. Tested on Linux (dash, bash, busybox sh; gawk, mawk); Windows, macOS and the BSDs not yet tested. Built by <code>orgfs site</code> from a declaration of $NSP $_nplural, file identity <code>$FILEID</code>. Nothing on this page says the tests passed; run <code>make check</code>.</p>
+
+<h2>The origination and curation story</h2>
+<p>This page is the story of how a machine-assisted (vibe-coded) build came to be: what was asked, in the asker&#39;s own words; what was observed, and by which command; and what was judged, with the way each judgement could be shown wrong.
+Nothing here is a polished account written afterwards; the records are kept as the work made them, so you can check one against another.</p>
+<p>If you use Emacs, this is the part for you. orgfs&#39;s own CI has Emacs read every composed file with Org before anything is deployed, because, in Corwin Brust&#39;s words of 2026-11-07, 09:32, Emacs is &quot;a second reader over any system it runs on&quot;.
+The check is <a href="https://github.com/inputloop/orgfs/blob/main/tests/org_check.el">tests/org_check.el</a>; each run&#39;s log is public at <a href="/ci/">/ci/</a>, and the check prints a line of the form <code>org_check: OK (N assertions; Org X, Emacs Y)</code> with the versions the builder really has. This page does not state those versions: read them in the log.</p>
 
 <h2>What you get</h2>
 <p>You can spread a file over a group of machines and lose one without losing the
@@ -1760,6 +1907,11 @@ Org file, the <em>declaration</em>, which every machine holds identically.</p>
 <p>&quot;[ROOT as a path every member sees] is preferred, or at least &#39;my thoughts exactly&#39;&quot;</p>
 <footer>on the page: &quot;good in that it doesn&#39;t look like other things not as good in the particulars&quot;</footer>
 </blockquote>
+<p><span class="tag">asked</span>Corwin Brust, 2026-11-07, about the 0.4 site (short quotes):</p>
+<blockquote>
+<p>08:02, of the declaration: &quot;doesn&#39;t tell me any story at all, it reads like a configuration file&quot;</p>
+<p>09:21, of the whole: &quot;It&#39;s awesome. The most confusing thing left (to the m1 eyeball set at wide-angle &quot;what will others see, here?&quot;) is the story told by the home page.&quot;</p>
+</blockquote>
 
 <h2>What was observed</h2>
 <p><span class="tag">observed</span>By <code>orgfs check</code> and <code>orgfs plan</code> on the declaration this site was built from.
@@ -1768,6 +1920,7 @@ The declaration is stored as atoms: small Org files, each beginning with its own
 at the <code>:ORGFS_ATOM:</code> headings, byte for byte; every command gives the same identity whichever form it is given.
 Each spoke has its own identity (the SHA-256 of its normalized properties) and the file has one
 made from the spokes&#39; identities, sorted, so neither the order of the spokes nor the prose changes either.</p>
+<p><span class="tag">observed</span>Which machine keeps which piece is worked out, not stored. For every piece and every member, orgfs takes the SHA-256 of the text <code>spoke|stripe|member</code> (the spoke&#39;s name, the piece&#39;s number and the member&#39;s name, joined by <code>|</code>); the members with the highest scores, as many as the spoke has replicas, keep that piece. Every machine given the same declaration works out the same table.</p>
 EOF
     for _s in $SPOKES; do load_spoke "$_s"; site_spoke; done
     if [ "$_allpublic" = 1 ]; then
@@ -1783,6 +1936,8 @@ EOF
 
 <h2>What was judged</h2>
 <ul>
+<li><span class="tag">choice</span>The home page tells the example as a story and leaves these working records to this page. Reason: at his 09:21 word the story was the most confusing thing left, and a newcomer needs it before the record of how it was made.
+Would be wrong if a newcomer still cannot say what orgfs is after reading the home page; nobody but the author has read it yet.</li>
 <li><span class="tag">choice</span>The file is Org&#39;s own: atoms are brought in by <code>#+INCLUDE</code> and marked by an <code>:ORGFS_ATOM:</code> property. Reason: a marker of our own would be a small language to learn,
 and Org already has both an include and a place for a property. Would be wrong if Org&#39;s export expands the same source to other bytes than <code>orgfs compose</code> writes;
 <code>tests/org_check.el</code> asks Emacs, and says NOT CHECKED where there is none.</li>
@@ -1805,13 +1960,12 @@ anywhere. Would be wrong if a host cannot mount another member&#39;s storage at 
 <li>Anything on a real ghostwheel host: the tests use local directories for hosts.</li>
 <li>Operating systems other than Linux, and sshfs mounts made for real.</li>
 <li>That a browser shows this page as intended in any particular browser or printer.</li>
+<li>That the home page tells a newcomer what orgfs is: that is the 09:21 question, and only the author has read the answer.</li>
 </ul>
 EOF
     html_foot
-  } > "$_out/index.html"
+  } > "$_out/made.html"
   if [ "$_allpublic" = 1 ]; then
-    if [ -d "$_decl" ]; then ( compose_dir "$_decl" "$_out/declaration.org" m ) || die "site: cannot compose $_decl"
-    else cp "$DECLFILE" "$_out/declaration.org"; fi
     {
       html_head "The declaration" declaration
       cat <<EOF
