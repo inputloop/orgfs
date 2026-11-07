@@ -88,6 +88,29 @@ def ref_file_identity(ids):
     return sha(("orgfs-file-1\n" + "".join(i + "\n" for i in sorted(ids))).encode())
 
 
+def shown(text, s):
+    """True if a withheld string appears in text. A member name (a short token such as h6) counts only
+    as a whole name, so a random temporary folder like tmph6ai_fh1 is not read as a leak; a path or a
+    hash counts anywhere."""
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,32}", s):
+        return re.search(r"(?<![A-Za-z0-9_.-])" + re.escape(s) + r"(?![A-Za-z0-9_.-])", text) is not None
+    return s in text
+
+
+class ShownTests(unittest.TestCase):
+    """The leak check itself: a name inside a random folder is not a leak; a whole name is."""
+
+    def test_a_name_inside_a_random_folder_is_not_a_leak(self):
+        self.assertFalse(shown(":BYTES_AT: /tmp/tmpf4gv4ffo/tmph6ai_fh1/pub/x", "h6"))
+
+    def test_a_whole_name_is_a_leak(self):
+        for t in ("** member h6", ":REACH: h5 h6", ":ROOT: /spokes/sealed/h6", "h6"):
+            self.assertTrue(shown(t, "h6"), t)
+
+    def test_a_path_counts_anywhere(self):
+        self.assertTrue(shown("x/tmp/a/sealed/h6/y", "/tmp/a/sealed/h6"))
+
+
 class World:
     """Three spokes over local directories: pub (public), priv (private), sealed."""
 
@@ -220,7 +243,7 @@ class ViewTests(unittest.TestCase):
     def test_nothing_withheld_is_in_the_view(self):
         for v in VIEWERS:
             for s in self.w.withheld_strings(v):
-                self.assertNotIn(s, self.views[v], (v, s))
+                self.assertFalse(shown(self.views[v], s), (v, s))
 
     def test_members_see_what_outsiders_do_not(self):
         self.assertIn(self.w.roots[("priv", "h2")], self.views["h2"])
@@ -495,7 +518,7 @@ class AssembleTests(unittest.TestCase):
         for v in VIEWERS:
             into, out = self.assemble(v)
             for s in self.w.withheld_strings(v):
-                self.assertNotIn(s, out, (v, s))
+                self.assertFalse(shown(out, s), (v, s))
             blob = b"".join(self.files(into).values())
             for s, sp in SPOKES.items():
                 if v not in sp["members"] and sp["vis"] != "public":
