@@ -1,5 +1,7 @@
 ** member gw14
 :PROPERTIES:
+:ORGFS_ATOM: licensing/member-gw14.org
 :ROOT: /spokes/gw14/storage
 :TRANSPORT: sshfs
 :END:
+gw14 is a second place for the pieces. Fact: gw12 mounts its storage over sshfs. Judged: a copy on another host is the point of having replicas, so gw14 is here to outlive gw12 being down.

@@ -1,0 +1,9 @@
+** If you are reading
+:PROPERTIES:
+:ORGFS_ATOM: next-reader.org
+:END:
+This is the first thing to do next, if you came to read.
+
+Open the register of licences and look at the entries marked unchecked: they say where we have not yet confirmed a licence from its own source. If you find one that is wrong, say so; the register says where we looked, so you can look there too.
+
+To see that this page says what it appears to say, run orgfs check on it. It prints the identity of the declaration, and the same identity is written in the table of atoms at the end of this page.

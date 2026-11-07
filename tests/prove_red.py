@@ -110,16 +110,17 @@ FAULTS = [
     ("the demo page lists fewer gaps than the view holds",
      '$AWK -v mode=tsv "$GAPS_AWK" "$_w/visitor.org" |', '$AWK -v mode=tsv "$GAPS_AWK" "$_w/visitor.org" | head -n 3 |'),
     # ---- 0.3.0: atoms, composition, the manifest
-    ("compose drops an atom (pub/member-h4.org is left out of the composed file)",
-     '  } > "$TMP/cbody" || return 1', "  } | sed '/begin pub\\/member-h4/,/end pub\\/member-h4/d' > \"$TMP/cbody\" || return 1"),
-    ("decompose merges two atoms (every second atom is written into the one before it)",
-     'if (mode == "write") { out = stage "/" p; printf "" > out }',
-     'if (mode == "write") { if (n % 2 == 1) { out = stage "/" p; printf "" > out } }'),
+    ("compose drops an atom (the first one is left out of the default story, and the missing-include check is off)",
+     [('END { for (p in a) if (!(p in seen))', 'END { for (p in a) if (0)'),
+      ("$AWK '{ if (NR > 1) print \"\"; printf \"#+INCLUDE: \\\"%s\\\"\\n\", $0 }' \"$TMP/atoms\" > \"$2\"",
+       "$AWK 'NR == 1 { next } { print \"\"; printf \"#+INCLUDE: \\\"%s\\\"\\n\", $0 }' \"$TMP/atoms\" > \"$2\"")]),
+    ("decompose loses the last line of every atom",
+     'for (i = astart[k]; i <= aend[k]; i++) printf "%s\\n", L[i] > out', 'for (i = astart[k]; i < aend[k]; i++) printf "%s\\n", L[i] > out'),
     ("the identity differs between the atom directory and the composed file",
      '  parse_decl "$DECLFILE" "$1"\n',
      '  parse_decl "$DECLFILE" "$1"\n  if [ -d "$1" ]; then FILEID=$(sha_str "$FILEID"); fi\n'),
     ("RULE_AT points into the composed file instead of the atom",
-     'function at(n) { return (atom != "") ? atom " line " (n - abase) : "line " n }',
+     'function at(n) { return (atom != "") ? atom " line " arel[n] : "line " n }',
      'function at(n) { return "line " n }'),
     ("a composed file is read after an atom beside it changed (STALE printed, then used)",
      'stale_diff "$TMP/mf" "$TMP/fa" "in the atoms beside it, $cf_dir" || cf_rc=1',
@@ -133,16 +134,48 @@ FAULTS = [
      'warn "$2: composed file read without its atoms; freshness not checked"', 'true'),
     ("the manifest's identity is never compared",
      '[ "$MF_IDENT" != "$FILEID" ]', 'false'),
-    ("decompose silently drops text outside the atoms",
-     '{ fail("text outside any atom would be lost: " $0) }', '{ next }'),
+    ("decompose silently drops the story's own text (everything outside the atoms)",
+     'if (nmf == 1 && i == mhead - 1 && blank(L[i])) continue', 'if (own[i] == 0) continue'),
     ("decompose overwrites an atom that differs",
      'if [ -e "$_dir/$_p" ] && ! cmp -s', 'if false && ! cmp -s'),
-    ("compose accepts an atom that holds a composition marker",
-     "! grep -Eq '^# orgfs-(atom|compose|manifest): ' \"$1/$cd_a\" ||", 'true ||'),
+    ("compose accepts an atom that holds an #+INCLUDE of its own",
+     'if (toupper(s) ~ /^[ \\t]*#\\+INCLUDE:/) f("line " i ": an atom holds no #+INCLUDE', 'if (0) f("line " i ": an atom holds no #+INCLUDE'),
     ("a displayed member does not say which atom declared it",
      [(":HOLDS: %s\\n:DECLARED_AT: %s\\n:END:\\n' \"$(holds_of \"$vs_h\")\" \"$(member_line \"$vs_h\" heading)\"", ":HOLDS: %s\\n:END:\\n' \"$(holds_of \"$vs_h\")\"")]),
     ("a member atom may sit in another spoke's directory",
      'else if (atom != "" && !member_ok(atom, sname, w[2]))', 'else if (0)'),
+    # ---- 0.4.0: Org's own #+INCLUDE, the story, the manifest table
+    ("compose lets Org change an atom's stars (the strict level check is off)",
+     'if (strict && d == 1 && off != 0)', 'if (0 && strict && d == 1 && off != 0)'),
+    ("an included file keeps its blank lines at head and tail (Org trims them)",
+     'if (trim) { while (a <= b && isblank(T[d, a])) a++; while (b >= a && isblank(T[d, b])) b-- }', ''),
+    ("an included file is not moved to the level the story sets",
+     'if (off != 0) for (i = a; i <= b; i++) if (lvl(T[d, i]) > 0) {', 'if (0) for (i = a; i <= b; i++) if (lvl(T[d, i]) > 0) {'),
+    (":lines on an include is quietly ignored",
+     'if (w ~ /:lines/) die(":lines on #+INCLUDE is outside the supported subset")', ''),
+    ("an include that names an absolute path is followed",
+     'if (v ~ /^[\\/~]/) die("an absolute path is outside the supported subset: " v)', ''),
+    ("a recursive include is followed",
+     'for (k = 0; k <= d; k++) if (stack[k] == full) die("recursive inclusion of " p)', ''),
+    ("an atom included twice by the story is accepted",
+     'else if (seen[$0] > 1) {', 'else if (0) {'),
+    ("compose writes a source form whose includes point nowhere (the relative prefix is dropped)",
+     "$AWK -v pfx=\"${CD_PREFIX:-}\"", "$AWK -v pfx=\"\""),
+    ("the manifest table loses its story.org row",
+     "  printf '| story.org | %s |\\n' \"$(sha_file \"$TMP/story\")\"", "  true"),
+    ("the manifest table is not given its #+NAME",
+     "printf '#+NAME: orgfs-manifest\\n| atom | sha256 |", "printf '| atom | sha256 |"),
+    ("the declaration's identity is not a property of the manifest heading",
+     ":PROPERTIES:\\n:ORGFS_IDENTITY: %s\\n:END:\\n%s", ":PROPERTIES:\\n:END:\\n%s"),
+    # ---- 0.4.0: Emacs reads what orgfs wrote (these run tests/org_check.sh on the faulted copy; no emacs, no verdict)
+    ("compose writes a line Org would not produce (a comment marker above the composed text)",
+     """      cat "$TMP/ebody"
+    fi""", """      printf '# orgfs-compose: 1\\n'; cat "$TMP/ebody"
+    fi""", "emacs"),
+    ("an atom heading loses its :ORGFS_ATOM: property in the composed text",
+     """      cat "$TMP/ebody"
+    fi""", """      grep -v '^:ORGFS_ATOM: ' "$TMP/ebody"
+    fi""", "emacs"),
 ]
 
 
@@ -157,7 +190,21 @@ def plant(src, old, new):
 
 
 def unpack(fault):
-    return fault if len(fault) == 3 else (fault[0], fault[1], None)
+    return fault[:3] if len(fault) >= 3 else (fault[0], fault[1], None)
+
+
+def is_emacs(fault):
+    return len(fault) == 4 and fault[3] == "emacs"
+
+
+def have_emacs():
+    return shutil.which(os.environ.get("EMACS", "emacs")) is not None
+
+
+def run_org_check(binpath):
+    env = dict(os.environ, ORGFS_BIN=binpath, ORGFS_REQUIRE_EMACS="1")
+    p = subprocess.run(["sh", os.path.join(HERE, "org_check.sh")], capture_output=True, env=env, timeout=600)
+    return p.returncode, p.stdout.decode() + p.stderr.decode()
 
 
 def run_suite(binpath, failfast=False):
@@ -178,6 +225,11 @@ def try_fault(td, src, idx, fault):
     with open(copy, "w") as f:
         f.write(plant(src, old, new))
     os.chmod(copy, 0o755)
+    if is_emacs(fault):
+        if not have_emacs():
+            return name, None, ["no emacs"]
+        rc, out = run_org_check(copy)
+        return name, rc, ["org_check"] if "FAILED" in out else []
     rc, failing, err = run_suite(copy, failfast=True)
     return name, rc, failing
 
@@ -209,6 +261,7 @@ def main():
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
             futs = [ex.submit(try_fault, td, src, i, ft) for i, ft in enumerate(todo)]
             ctl = ex.submit(run_suite, copy)
+            ectl = ex.submit(run_org_check, copy) if have_emacs() and any(is_emacs(f) for f in todo) else None
             results = [f.result() for f in futs]
             rc, failing, err = ctl.result()
         if rc != 0:
@@ -216,17 +269,30 @@ def main():
             print(err[-2000:])
             return 1
         print("control: passed on the untouched copy")
+        if ectl is not None:
+            erc, eout = ectl.result()
+            if erc != 0:
+                print("control FAILED on the untouched copy (org_check):", eout[-2000:])
+                return 1
+            print("control: org_check passed on the untouched copy")
         caught = 0
+        notchecked = []
         for name, rc, failing in results:
-            if rc != 0 and failing:
+            if rc is None:
+                notchecked.append(name)
+                print("NOT CHECKED (no emacs): %s" % name)
+            elif rc != 0 and failing:
                 caught += 1
                 u = sorted(set(failing))
                 print("caught: %s  [%s%s]" % (name, ", ".join(u[:3]), " ..." if len(u) > 3 else ""))
             else:
                 print("MISSED: %s (rc=%d)" % (name, rc))
         if rng:
-            print("PARTIAL (%d of %d in range %s caught; control passed)" % (caught, len(todo), rng))
-            return 0 if caught == len(todo) else 1
+            print("PARTIAL (%d of %d in range %s caught; %d not checked; control passed)" % (caught, len(todo), rng, len(notchecked)))
+            return 0 if caught + len(notchecked) == len(todo) else 1
+        if notchecked:
+            print("PROVE-RED NOT COMPLETE (%d caught, %d NOT CHECKED for want of emacs; no verdict)" % (caught, len(notchecked)))
+            return 1 if (os.environ.get("CI") or os.environ.get("ORGFS_REQUIRE_EMACS") == "1") else 0
         if caught != len(FAULTS):
             print("PROVE-RED FAILED (%d of %d caught)" % (caught, len(FAULTS)))
             return 1

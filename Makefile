@@ -4,11 +4,12 @@ PYTHON ?= python3
 SHELLS ?= dash bash "busybox sh"
 AWKS   ?= gawk mawk
 
-.PHONY: check check-shells prove-red site demo compose clean
+.PHONY: check check-shells prove-red site demo compose source clean
 
 check:
 	sh -n bin/orgfs
 	$(PYTHON) tests/run_all.py
+	sh tests/org_check.sh
 
 # every shell x every awk (slow; not part of `check`)
 check-shells:
@@ -26,6 +27,10 @@ site:
 # the composed file is generated from the atoms; it is not kept in git
 compose:
 	sh bin/orgfs compose examples/licensing.d --out examples/licensing.org
+
+# the story with its #+INCLUDE lines, for Org to expand
+source:
+	sh bin/orgfs compose examples/licensing.d --source --out examples/licensing-source.org
 
 demo:
 	sh bin/orgfs demo

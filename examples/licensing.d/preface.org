@@ -1,12 +1,11 @@
-#+TITLE: licensing - an example declaration
-#+LANGUAGE: en
+* Why this spoke exists
+:PROPERTIES:
+:ORGFS_ATOM: preface.org
+:END:
+This is where the story starts: what the spoke is for.
 
-This is an example. The declaration is kept as atoms: this file, one spoke.org
-for the spoke and one member-HOST.org for each member. Hold the atoms (or the
-file composed from them with =orgfs compose=) identically on every member and
-each host derives its own part of the plan from them. Prose such as this
-paragraph is ignored by the tool and does not change the spoke's identity.
+orgfs stands on other people's free software: a shell, an awk, a web server, an operating system. This spoke exists to show, in the open, which licence each of those carries, as we found it and where we looked.
 
-The paths follow the /spokes layout of the ghostwheel: another host's storage
-appears as an sshfs mount under /spokes/HOST/storage, at the same path on
-every host that uses it.
+The page you are reading is the declaration of that spoke. It is also its own explanation. The lines a program reads sit in the small tables under each heading (Org calls them property drawers); the paragraphs around them are for you.
+
+This is an example. The hosts are real names from Corwin's ghostwheel, and what is said about each one is marked as a fact or as an example, so you can tell which is which.

@@ -1,7 +1,11 @@
 * spoke licensing
 :PROPERTIES:
+:ORGFS_ATOM: licensing/spoke.org
 :RING: GREAT
 :STRIPES: 5
 :REPLICAS: 2
 :VISIBILITY: public
 :END:
+This is the spoke itself: one named place where the register of licences is kept.
+
+Every file put into it is cut into 5 stripes, and each stripe is kept on 2 of the members, so one member can be lost without losing the file. The spoke is public: anyone may be shown what it holds and where it is held.

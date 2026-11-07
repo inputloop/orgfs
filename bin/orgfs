@@ -17,7 +17,7 @@ set -u
 LC_ALL=C
 export LC_ALL
 AWK=${ORGFS_AWK:-awk}
-VERSION=0.3.0
+VERSION=0.4.0
 HERE=$(cd "$(dirname "$0")" && pwd)
 SHARE=${ORGFS_SHARE:-$HERE/../share}
 
@@ -42,10 +42,15 @@ size_of() { wc -c < "$1" | tr -d ' '; }
 usage() {
   cat <<'USAGE'
 usage: orgfs COMMAND ...
-  DECL is a declaration in either form: a directory of atoms (the source of record:
-  one small Org file per spoke and one per member) or the one file composed from them.
-  compose DIR [--out FILE]   build the one literate file from the atoms in DIR
-  decompose FILE DIR         split a composed file back into the atoms (byte for byte)
+  DECL is a declaration in any of its forms: a directory of atoms (the record: Org files, each
+  beginning with its own heading, plus story.org that says where each belongs), the one expanded
+  file made from them, or the source form of that file (the story, with #+INCLUDE lines).
+  compose DIR [--source] [--out FILE]
+                             the expanded file (what Org makes of the story's #+INCLUDE lines)
+                             with its manifest table; --source: the story itself instead
+  expand FILE [--out FILE]   expand the #+INCLUDE lines of a source form (the subset in README.org)
+  decompose FILE DIR         split an expanded file at its :ORGFS_ATOM: headings back into the
+                             atoms and story.org (byte for byte)
   check DECL [--spoke S] [--no-mounts]
                              parse and sanity-check a declaration; print identities
   plan DECL [--spoke S] [--as HOST]
@@ -82,12 +87,13 @@ USAGE
 #   L <spoke> member HOST KEY WHERE
 # WHERE is "line N" in a plain file, and "ATOM line N" inside a composed file, ATOM being the
 # atom file (SPOKE/spoke.org, SPOKE/member-HOST.org) that the line came from: the composed
-# file marks each atom with "# orgfs-atom: begin ATOM" ... "# orgfs-atom: end ATOM" comments.
+# file starts each atom at a heading whose property drawer says  :ORGFS_ATOM: ATOM.
 # Complaints on stderr, status 1 if anything is wrong.
 #
 # ATOM_AWK is the one rule for what an atom may be called; compose, decompose and the parser share it.
 ATOM_AWK='
 function atom_check(p,   n, a, i) {
+  if (p == "story.org") return "story.org is the story that sets the atoms in order, not an atom"
   n = split(p, a, "/")
   if (n > 2) return "an atom sits at NAME.org, SPOKE/spoke.org or SPOKE/member-HOST.org, no deeper"
   for (i = 1; i <= n; i++) if (a[i] !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) return "bad path component " a[i] " (letters, digits, dot, dash, underscore)"
@@ -99,50 +105,285 @@ function atom_check(p,   n, a, i) {
   return ""
 }
 '
+# SCAN_AWK reads an expanded document and finds its atoms the Org way: an atom begins at a heading whose
+# property drawer holds :ORGFS_ATOM: PATH and runs to the next heading that is not deeper than it (or the
+# next atom, or the manifest section, or the end), without the blank lines at its tail.  Whatever is not
+# an atom or the manifest is the story (the frame the atoms are set into).  Modes (-v mode=):
+#   list      the atom paths, in order          map       "LINE TAB atom TAB line-in-atom" for atom lines
+#   write     each atom and story.org into -v stage=DIR       manifest  "identity TAB X", "row TAB atom TAB sha"
+#   check     only the checks
+SCAN_AWK='
+function fail(m, ln) { printf "orgfs: %s:%d: %s\n", file, ln, m > "/dev/stderr"; bad = 1 }
+function blank(s) { return s ~ /^[ \t\r]*$/ }
+function nocr(s) { sub(/\r$/, "", s); return s }
+function lvl(s,   n) { if (s !~ /^\*+ /) return 0; n = 0; while (substr(s, n + 1, 1) == "*") n++; return n }
+function keyval(t, key,   v) {
+  if (toupper(substr(t, 1, length(key) + 2)) != ":" key ":") return ""
+  v = substr(t, length(key) + 3); sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v); return v
+}
+function shut(e,   k) {
+  if (kind == "A") { while (e > start && blank(L[e])) e--; aend[na] = e; for (k = start; k <= e; k++) own[k] = na }
+  else if (kind == "M") { mend = e; for (k = start; k <= e; k++) own[k] = -1 }
+  kind = ""
+}
+{ L[NR] = $0 }
+END {
+  N = NR; bad = 0; blk = 0; kind = ""; na = 0; nmf = 0
+  for (i = 1; i <= N; i++) {
+    s = L[i]
+    if (blk) { if (toupper(s) ~ /^[ \t]*#\+END_/) blk = 0; continue }
+    if (toupper(s) ~ /^[ \t]*#\+BEGIN_/) { blk = 1; continue }
+    if ((lv = lvl(s)) == 0) continue
+    level[i] = lv
+    if (nocr(L[i + 1]) == ":PROPERTIES:")
+      for (j = i + 2; j <= N; j++) {
+        t = nocr(L[j])
+        if (t == ":END:" || lvl(t) > 0) break
+        if ((v = keyval(t, "ORGFS_ATOM")) != "") apath[i] = v
+        else if ((v = keyval(t, "ORGFS_IDENTITY")) != "") mid[i] = v
+      }
+  }
+  for (i = 1; i <= N; i++) {
+    if (!(i in level)) continue
+    if (i in apath) {
+      shut(i - 1); kind = "A"; start = i; olv = level[i]; na++; astart[na] = i; ap[na] = apath[i]
+      r = atom_check(apath[i])
+      if (r != "") fail("atom " apath[i] ": " r, i)
+      else if (apath[i] in seen) fail("atom " apath[i] " appears twice", i)
+      seen[apath[i]] = 1
+    } else if (i in mid) {
+      shut(i - 1)
+      if (++nmf > 1) fail("two manifest sections", i)
+      kind = "M"; start = i; olv = level[i]; mident = mid[i]; mhead = i
+    } else if (kind != "" && level[i] <= olv) shut(i - 1)
+  }
+  shut(N)
+  if (nmf == 1) {
+    j = mhead + 2
+    while (j <= mend && nocr(L[j]) != ":END:") {
+      if (keyval(nocr(L[j]), "ORGFS_IDENTITY") == "") fail("this line in the manifest drawer is not one orgfs wrote: " L[j], j)
+      j++
+    }
+    if (length(mident) != 64 || mident ~ /[^0-9a-f]/) fail("the manifest identity is not a SHA-256", mhead)
+    nrow = 0
+    for (j++; j <= mend; j++) {
+      t = nocr(L[j])
+      if (blank(t) || t == msent || t == "#+NAME: orgfs-manifest") continue
+      if (t ~ /^\|/) {
+        if (t ~ /^\|[-+|]*$/) continue
+        n = split(t, c, "|")
+        for (m = 2; m < n; m++) { sub(/^ +/, "", c[m]); sub(/ +$/, "", c[m]) }
+        if (n != 4) { fail("a manifest row has two cells, atom and sha256: " t, j); continue }
+        if (c[2] == "atom" && c[3] == "sha256") continue
+        if (length(c[3]) != 64 || c[3] ~ /[^0-9a-f]/) { fail("not a SHA-256 in the manifest: " c[3], j); continue }
+        nrow++; rowp[nrow] = c[2]; rows[nrow] = c[3]
+        continue
+      }
+      fail("this line in the manifest section is not one orgfs wrote: " t, j)
+    }
+  }
+  if (bad) exit 1
+  if (mode == "list") { for (k = 1; k <= na; k++) print ap[k]; exit 0 }
+  if (mode == "map") {
+    for (k = 1; k <= na; k++) for (i = astart[k]; i <= aend[k]; i++) printf "%d\t%s\t%d\n", i, ap[k], i - astart[k] + 1
+    exit 0
+  }
+  if (mode == "manifest") {
+    if (nmf == 1) { print "identity\t" mident; for (k = 1; k <= nrow; k++) print "row\t" rowp[k] "\t" rows[k] }
+    exit 0
+  }
+  if (mode == "write") {
+    for (k = 1; k <= na; k++) {
+      out = stage "/" ap[k]; printf "" > out
+      for (i = astart[k]; i <= aend[k]; i++) printf "%s\n", L[i] > out
+      close(out)
+    }
+    out = stage "/story.org"; printf "" > out
+    for (i = 1; i <= N; i++) {
+      if (own[i] == -1) continue
+      if (own[i] > 0) { if (i == astart[own[i]]) printf "#+INCLUDE: \"%s\"\n", ap[own[i]] > out; continue }
+      if (nmf == 1 && i == mhead - 1 && blank(L[i])) continue
+      printf "%s\n", L[i] > out
+    }
+    close(out)
+  }
+  exit 0
+}
+'
+# LINT_AWK: what an atom must be, so that Org, expanding an #+INCLUDE of it, gives back exactly its bytes.
+LINT_AWK='
+function f(m) { printf "orgfs: atom %s: %s\n", path, m > "/dev/stderr"; bad = 1 }
+function lvl(s,   n) { if (s !~ /^\*+ /) return 0; n = 0; while (substr(s, n + 1, 1) == "*") n++; return n }
+function has_atom_prop(i,   j, t) {
+  if (toupper(L[i + 1]) != ":PROPERTIES:") return 0
+  for (j = i + 2; j <= n && L[j] != ":END:" && lvl(L[j]) == 0; j++) if (toupper(L[j]) ~ /^:ORGFS_ATOM:/) return 1
+  return 0
+}
+{ L[NR] = $0 }
+END {
+  n = NR; bad = 0
+  if (n < 2) { f("is too short: an atom is a heading, its :PROPERTIES: drawer and then its text"); exit 1 }
+  first = lvl(L[1])
+  if (first == 0) f("must begin with a heading line (stars, a space, the title), and begins with: " L[1])
+  if (L[2] != ":PROPERTIES:") f("the heading must be followed at once by its :PROPERTIES: drawer")
+  got = ""
+  for (i = 3; i <= n && L[i] != ":END:"; i++) if (toupper(L[i]) ~ /^:ORGFS_ATOM:/) { got = L[i]; sub(/^:[A-Za-z_]+:[ \t]*/, "", got); sub(/[ \t]+$/, "", got) }
+  if (got == "") f("the first drawer lacks  :ORGFS_ATOM: " path)
+  else if (got != path) f(":ORGFS_ATOM: says " got ", but the atom is " path)
+  blk = 0
+  for (i = 1; i <= n; i++) {
+    s = L[i]
+    if (index(s, "\r") > 0) { f("line " i " holds a carriage return (atoms use LF line ends)"); break }
+    if (blk) { if (toupper(s) ~ /^[ \t]*#\+END_/) blk = 0; if (lvl(s) > 0) f("line " i ": a line of stars inside a block (Org would move it as a heading)"); continue }
+    if (toupper(s) ~ /^[ \t]*#\+BEGIN_/) blk = 1
+    lv = lvl(s)
+    if (lv > 0 && lv < first) f("line " i ": a heading shallower than the first one")
+    if (lv > 0 && i > 1 && has_atom_prop(i)) f("line " i ": a second :ORGFS_ATOM: heading (one atom, one file)")
+    if (s ~ /^\*+ COMMENT( |$)/) f("line " i ": a COMMENT heading is outside the supported subset")
+    if (toupper(s) ~ /^[ \t]*#\+INCLUDE:/) f("line " i ": an atom holds no #+INCLUDE (the story does the including)")
+    if (s ~ /^#\+NAME:[ \t]*orgfs-manifest/ || toupper(s) ~ /^:ORGFS_IDENTITY:/) f("line " i ": that is the manifest, which orgfs writes")
+    if (index(s, "[fn:") > 0) f("line " i ": a footnote (Org renumbers footnotes of included files)")
+    if (tolower(s) ~ /(^|[^a-z0-9])file:/ || s ~ /\[\[\.\.?\//) f("line " i ": a file link (Org rewrites relative file links of included files)")
+  }
+  if (L[n] ~ /^[ \t\r]*$/) f("ends with a blank line (Org drops blank lines around an include, so the atom would not come back byte for byte)")
+  exit bad
+}
+'
+# EXPAND_AWK: the subset of Org's #+INCLUDE this tool expands (README: "Org, not our own syntax").
+# The one form  #+INCLUDE: "relative/path.org"  at the start of a line.  As Org does: an included
+# file loses its blank lines at head and tail, and its headings are moved so that the shallowest has
+# the level one below the heading the include sits under (level 1 under none); includes inside the
+# included file are expanded the same way, relative to that file.  -v strict=1 refuses a move
+# (compose: an atom must already have the level the story gives it).  Anything else is refused.
+EXPAND_AWK='
+function die(m) { printf "orgfs: %s: %s\n", ctx, m > "/dev/stderr"; exit 1 }
+function isblank(s) { return s ~ /^[ \t\r]*$/ }
+function lvl(s,   n) { if (s !~ /^\*+ /) return 0; n = 0; while (substr(s, n + 1, 1) == "*") n++; return n }
+function slurp(f,   save, r, w) {
+  save = RS; RS = "\034"
+  w = ""; r = (getline w < f)
+  RS = save
+  if (r < 0) return -1
+  close(f)
+  SW = w
+  return 0
+}
+function inc_path(s,   v, w, h) {
+  if (s !~ /^#\+INCLUDE: "[^"]+"$/) {
+    if (s ~ /^[ \t]/) die("an indented #+INCLUDE is outside the supported subset")
+    h = substr(s, 1, 10)
+    if (toupper(h) == "#+INCLUDE:" && h != "#+INCLUDE:") die("write the keyword in capitals, #+INCLUDE:")
+    w = s
+    if (w ~ /:lines/) die(":lines on #+INCLUDE is outside the supported subset")
+    if (w ~ /:minlevel/) die(":minlevel on #+INCLUDE is outside the supported subset")
+    if (w ~ /:only-contents/ || w ~ /:coding/) die(":only-contents and :coding on #+INCLUDE are outside the supported subset")
+    if (w ~ /"[ \t]+[^ \t]/ || w ~ /::/) die("arguments after the file name (src, example, export, quote, a search, ...) are outside the supported subset")
+    die("outside the supported subset: only  #+INCLUDE: \"relative/path.org\"  is expanded")
+  }
+  v = substr(s, 13, length(s) - 13)
+  if (v ~ /^[\/~]/) die("an absolute path is outside the supported subset: " v)
+  if (v ~ /^[A-Za-z][A-Za-z0-9+.-]*:/ || v ~ /::/) die("a URL or a search is outside the supported subset: " v)
+  if (v ~ /\\/ || v ~ /\/\// ) die("a path with a backslash or an empty component is outside the supported subset: " v)
+  if (v !~ /\.org$/) die("only .org files are included: " v)
+  return v
+}
+function expand(f, d, induced, trim,   n, i, a, b, nonl, tmp, min, off, k, s, lv, cur, blk, drw, p, full, st, nm) {
+  nm = (d == 0) ? label : f
+  ctx = nm
+  if (d > 16) die("includes nested more than 16 deep are outside the supported subset")
+  dirs[d] = (d == 0) ? dir0 : f
+  if (d > 0) sub(/\/?[^\/]*$/, "", dirs[d])
+  stack[d] = f
+  if (slurp(f) < 0) die("cannot read the file")
+  n = 0; nonl = 0
+  if (SW != "") { n = split(SW, tmp, "\n"); if (substr(SW, length(SW)) == "\n") n--; else nonl = 1 }
+  for (i = 1; i <= n; i++) T[d, i] = tmp[i]
+  a = 1; b = n
+  if (trim) { while (a <= b && isblank(T[d, a])) a++; while (b >= a && isblank(T[d, b])) b-- }
+  if (nonl && b == n && a <= b) die("does not end in a newline (Org would join the next line to its last one)")
+  min = 0; blk = 0
+  for (i = a; i <= b; i++) {
+    s = T[d, i]; ctx = nm ":" i
+    if (blk) {
+      if (toupper(s) ~ /^[ \t]*#\+END_/) blk = 0
+      if (lvl(s) > 0) die("a line of stars inside a block: Org would move it as a heading")
+      continue
+    }
+    if (toupper(s) ~ /^[ \t]*#\+BEGIN_/) blk = 1
+    lv = lvl(s)
+    if (lv > 0 && (min == 0 || lv < min)) min = lv
+    if (s ~ /^\*+ COMMENT( |$)/) die("a COMMENT heading is outside the supported subset")
+    if (d > 0 && index(s, "[fn:") > 0) die("a footnote in an included file is outside the supported subset")
+    if (d > 0 && (tolower(s) ~ /(^|[^a-z0-9])file:/ || s ~ /\[\[\.\.?\//)) die("a file link in an included file is outside the supported subset")
+  }
+  if (d > 0 && min > 0) {
+    off = induced - min
+    if (strict && d == 1 && off != 0) { ctx = nm; die(sprintf("its top heading is at level %d, but the story sets it at level %d; Org would change its stars, and orgfs will not (write the atom heading with %d star(s))", min, induced, induced)) }
+    if (off != 0) for (i = a; i <= b; i++) if (lvl(T[d, i]) > 0) {
+      if (off > 0) { st = ""; for (k = 0; k < off; k++) st = st "*"; T[d, i] = st T[d, i] }
+      else T[d, i] = substr(T[d, i], 1 - off)
+    }
+  }
+  cur = 0; blk = 0; drw = 0
+  for (i = a; i <= b; i++) {
+    s = T[d, i]; ctx = nm ":" i
+    if ((lv = lvl(s)) > 0) cur = lv
+    if (blk) { if (toupper(s) ~ /^[ \t]*#\+END_/) blk = 0 }
+    else if (toupper(s) ~ /^[ \t]*#\+BEGIN_/) blk = 1
+    else if (drw) { if (s ~ /^[ \t]*:END:[ \t]*$/) drw = 0 }
+    else if (s ~ /^[ \t]*:[A-Za-z0-9_-]+:[ \t]*$/ && toupper(s) !~ /:END:/) drw = 1
+    if (tolower(s) ~ /^[ \t]*#\+include:/) {
+      if (blk || drw) die("#+INCLUDE inside a block or a drawer is outside the supported subset")
+      p = inc_path(s)
+      full = (dirs[d] == "" ? "" : dirs[d] "/") p
+      for (k = 0; k <= d; k++) if (stack[k] == full) die("recursive inclusion of " p)
+      if ((getline junk < full) < 0) die("cannot read " p)
+      close(full)
+      if (d == 0 && incl != "") print p >> incl
+      expand(full, d + 1, cur + 1, 1)
+    } else print s
+  }
+}
+BEGIN { expand(top, 0, 1, 0); exit 0 }
+'
 PARSE_AWK='
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
-function at(n) { return (atom != "") ? atom " line " (n - abase) : "line " n }
-function fail(m) { printf "orgfs: %s: %s\n", (atom != "") ? atom ":" (NR - abase) : decl ":" NR, m > "/dev/stderr"; bad = 1 }
-function afail(m) { printf "orgfs: %s: %s\n", atom, m > "/dev/stderr"; bad = 1 }
+function at(n) { return (atom != "") ? atom " line " arel[n] : "line " n }
+function fail(m) { printf "orgfs: %s: %s\n", (atom != "") ? atom ":" arel[NR] : decl ":" NR, m > "/dev/stderr"; bad = 1 }
+function afail(a, m) { printf "orgfs: %s: %s\n", a, m > "/dev/stderr"; bad = 1 }
 function endfail(m) { printf "orgfs: %s: %s\n", decl, m > "/dev/stderr"; bad = 1 }
 function spoke_ok(p, name,   a) { return split(p, a, "/") == 2 && a[1] == name && a[2] == "spoke.org" }
 function member_ok(p, spoke, host,   a) { return split(p, a, "/") == 2 && a[1] == spoke && a[2] == "member-" host ".org" }
-function atom_end(   n, a) {
-  n = split(atom, a, "/")
-  if (n == 2 && a[2] == "spoke.org" && ns_in != 1) afail("a spoke.org atom holds exactly one \"* spoke NAME\" heading (found " ns_in ")")
-  if (n == 2 && a[2] != "spoke.org" && nmem_in != 1) afail("a member atom holds exactly one \"** member HOST\" heading (found " nmem_in ")")
-  atom = ""
+function atom_end(a,   n, b) {
+  n = split(a, b, "/")
+  if (n == 2 && b[2] == "spoke.org" && ns_in != 1) afail(a, "a spoke.org atom holds exactly one \"spoke NAME\" heading (found " ns_in ")")
+  if (n == 2 && b[2] != "spoke.org" && nmem_in != 1) afail(a, "a member atom holds exactly one \"member HOST\" heading (found " nmem_in ")")
 }
-BEGIN { bad = 0; cur = ""; drawer = 0; nsp = 0; sname = ""; atom = ""; abase = 0; natoms = 0; outsideh = 0 }
-/^# orgfs-atom: / {
-  if (NF != 4 || ($3 != "begin" && $3 != "end")) { fail("bad atom marker: " $0); next }
-  p = $4
-  if ($3 == "begin") {
-    if (atom != "") fail("atom " p " begins inside atom " atom)
-    else if (p in aseen) fail("atom " p " appears twice")
-    else if ((r = atom_check(p)) != "") fail("atom " p ": " r)
-    else { atom = p; abase = NR; aseen[p] = 1; natoms++; ns_in = 0; nmem_in = 0 }
-  } else {
-    if (atom == "") fail("end marker for " p " with no atom open")
-    else if (atom != p) fail("end marker for " p " inside atom " atom)
-    else atom_end()
+BEGIN {
+  bad = 0; cur = ""; drawer = 0; nsp = 0; sname = ""; atom = ""; natoms = 0; outsideh = 0; prevatom = ""
+  while ((getline mline < map) > 0) { split(mline, mf, "\t"); amap[mf[1]] = mf[2]; arel[mf[1]] = mf[3] }
+  close(map)
+}
+{
+  atom = (NR in amap) ? amap[NR] : ""
+  if (atom != prevatom) {
+    if (prevatom != "") atom_end(prevatom)
+    if (atom != "") { ns_in = 0; nmem_in = 0; natoms++; aseen[atom] = 1 }
+    prevatom = atom
   }
-  cur = ""; drawer = 0
-  next
 }
 /^\*+[ \t]/ {
   drawer = 0; cur = ""
   n = 0
   while (substr($0, n + 1, 1) == "*") n++
   nw = split(trim(substr($0, n + 1)), w, /[ \t]+/)
-  if (n == 1 && atom == "") sname = ""
-  if (atom == "" && ((n == 1 && w[1] == "spoke") || (n == 2 && w[1] == "member"))) outsideh++
-  if (n == 1 && w[1] == "spoke") {
+  if (atom == "" && (w[1] == "spoke" || w[1] == "member")) outsideh++
+  if (w[1] == "spoke") {
     if (nw != 2) fail("heading must read: spoke NAME")
     else if (atom != "" && !spoke_ok(atom, w[2])) fail("spoke " w[2] " belongs in " w[2] "/spoke.org, not in " atom)
     else if (w[2] in sseen) fail("duplicate spoke " w[2])
     else { sname = w[2]; sseen[sname] = 1; nsp++; sorder[nsp] = sname; nm[sname] = 0; kl[sname, "heading"] = at(NR); cur = "spoke"; ns_in++ }
-  } else if (n == 2 && w[1] == "member") {
+  } else if (w[1] == "member") {
     if (nw != 2) fail("heading must read: member HOST")
     else if (sname == "") fail("member heading outside a spoke")
     else if (atom != "" && !member_ok(atom, sname, w[2])) fail("member " w[2] " of spoke " sname " belongs in " sname "/member-" w[2] ".org, not in " atom " (the spoke.org of a spoke comes before its members)")
@@ -159,6 +400,7 @@ drawer {
   if (!match(line, /^:[A-Za-z_-]+:/)) { fail("not a property line: " line); next }
   key = toupper(substr(line, 2, RLENGTH - 2))
   val = trim(substr(line, RLENGTH + 1))
+  if (key == "ORGFS_ATOM") next
   if (val == "") { fail("empty value for " key); next }
   if (cur == "spoke") {
     if (key !~ /^(RING|STRIPES|REPLICAS|VISIBILITY)$/) { fail("unknown spoke property " key); next }
@@ -172,7 +414,7 @@ drawer {
   next
 }
 END {
-  if (atom != "") afail("the atom is not closed (no end marker)")
+  if (prevatom != "") atom_end(prevatom)
   if (natoms > 0 && outsideh > 0) endfail("a composed file declares only through its atoms, but " outsideh " spoke or member heading(s) stand outside any atom")
   if (bad) exit 1
   if (nsp == 0) endfail("no \"* spoke NAME\" heading")
@@ -233,7 +475,7 @@ END {
 '
 
 # options, filled in by main
-O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0
+O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0; O_SOURCE=0
 
 spoke_norm() { # SPOKE -> its data rows in the 0.1.0 shape, sorted bytewise
   $AWK -F'\t' -v s="$1" '$1=="D"&&$2==s{ l=$3; for(i=4;i<=NF;i++) l=l "\t" $i; print l }' "$TMP/all" | sort
@@ -261,17 +503,34 @@ load_spoke() { # NAME -> ID SPOKE RING STRIPES REPLICAS VIS MEMBERS
   MEMBERS=$($AWK -F'\t' '$1=="member"&&$3=="ROOT"{print $2}' "$TMP/norm")
 }
 
-# ------------------------------------------------------------------ atoms
-# The source of record is a directory of atoms: DIR/NAME.org (prose), DIR/SPOKE/spoke.org (one
-# "* spoke SPOKE" heading with its four properties) and DIR/SPOKE/member-HOST.org (one
-# "** member HOST" heading with its two).  The one literate file is composed from them: each atom
-# inlined between "# orgfs-atom: begin ATOM" and "# orgfs-atom: end ATOM" comment lines (comments in
-# Org, so Emacs reads the composed file as an ordinary Org file).
+# ------------------------------------------------------------------ atoms, the story, composition
+# The record is a directory of atoms.  An atom is one Org file that begins with its own heading and
+# a :PROPERTIES: drawer whose :ORGFS_ATOM: says the atom's path: DIR/NAME.org (prose),
+# DIR/SPOKE/spoke.org (a "spoke SPOKE" heading and its four properties) and DIR/SPOKE/member-HOST.org
+# (a "member HOST" heading and its two).  DIR/story.org is the source form of the document: narrative
+# Org text with one  #+INCLUDE: "PATH"  at the point in the story where each atom belongs (without it
+# the atoms follow each other in a default order).  The expanded form, the file that travels alone, is
+# what Org's own export makes of the story: each #+INCLUDE replaced by the atom.  A manifest table at
+# its end records the atoms' hashes.
 
-# DIR -> $TMP/atoms: the atoms' paths relative to DIR, in composition order
+MANIFEST_SENTENCE='This table says which atoms the document above was composed from and the SHA-256 of each, so that a reader or a command can tell whether the atoms still say what this file says; the first row, story.org, is the story the atoms are set into. orgfs writes this section, so leave it as it is.'
+
+scan() { # MODE FILE [STAGE]
+  $AWK -v mode="$1" -v file="$2" -v stage="${3:-}" -v msent="$MANIFEST_SENTENCE" "$ATOM_AWK$SCAN_AWK" "$2"
+}
+
+# FILE STAGE -> the atoms and story.org that FILE holds, written under STAGE; their paths in $TMP/slist
+scan_stage() {
+  scan list "$1" > "$TMP/slist" || return 1
+  rm -rf "$2"; mkdir -p "$2" || return 1
+  while IFS= read -r ss_p; do mkdir -p "$2/$(dirname "$ss_p")"; done < "$TMP/slist"
+  scan write "$1" "$2"
+}
+
+# DIR -> $TMP/atoms: the atoms' paths relative to DIR, in the default order
 # (prose atoms first; then each spoke in name order, its spoke.org before its members).
 atoms_list() {
-  (cd "$1" && find . -type f -name '*.org') | sed 's#^\./##' | $AWK "$ATOM_AWK"'
+  (cd "$1" && find . -type f -name '*.org') | sed 's#^\./##' | grep -vx 'story.org' | $AWK "$ATOM_AWK"'
     { r = atom_check($0)
       if (r != "") { printf "orgfs: %s: %s\n", $0, r > "/dev/stderr"; bad = 1; next }
       n = split($0, a, "/")
@@ -283,63 +542,110 @@ atoms_list() {
   return 0
 }
 
-# DIR OUT [m]: the composed file.  Refuses an atom that could not be split out again.
-# With m the file carries a manifest: the declaration identity and the sha256 of every atom, so a
-# command that reads the composed file can tell whether the atoms still say what it says.
+# DIR OUT: the story of DIR (its story.org, or the default: every atom included in turn)
+story_of() {
+  if [ -f "$1/story.org" ]; then
+    cp "$1/story.org" "$2"
+  else
+    atoms_list "$1" || return 1
+    $AWK '{ if (NR > 1) print ""; printf "#+INCLUDE: \"%s\"\n", $0 }' "$TMP/atoms" > "$2"
+  fi
+}
+
+expand_file() { # SOURCE OUT [strict]: expand the #+INCLUDE lines of SOURCE, relative to its directory
+  $AWK -v top="$1" -v label="$1" -v dir0="$(dirname "$1")" -v strict="${3:-0}" -v incl= "$ATOM_AWK$EXPAND_AWK" > "$2"
+}
+
+relpath() { # FROMDIR TODIR (both exist): TODIR as a path relative to FROMDIR
+  rp_a=$(cd "$1" && pwd -P) && rp_b=$(cd "$2" && pwd -P) || return 1
+  $AWK -v a="$rp_a" -v b="$rp_b" 'BEGIN {
+    na = split(a, A, "/"); nb = split(b, B, "/"); i = 2
+    while (i <= na && i <= nb && A[i] == B[i]) i++
+    out = ""
+    for (j = i; j <= na; j++) out = out (out == "" ? "" : "/") ".."
+    for (j = i; j <= nb; j++) out = out (out == "" ? "" : "/") B[j]
+    print (out == "" ? "." : out) }'
+}
+
+# the manifest section: the declaration identity as a property of its heading, a sentence, the table
+manifest_section() { # DIR  (uses FILEID, $TMP/incl, $TMP/story)
+  printf '* Atoms and their hashes\n:PROPERTIES:\n:ORGFS_IDENTITY: %s\n:END:\n%s\n\n' "$FILEID" "$MANIFEST_SENTENCE"
+  printf '#+NAME: orgfs-manifest\n| atom | sha256 |\n|------+--------|\n'
+  printf '| story.org | %s |\n' "$(sha_file "$TMP/story")"
+  while IFS= read -r ms_a; do printf '| %s | %s |\n' "$ms_a" "$(sha_file "$1/$ms_a")"; done < "$TMP/incl"
+}
+
+# DIR OUT [m|s]: the document composed from the atoms.  Without a mode, the expanded text alone; with m,
+# the expanded form and its manifest; with s, the source form (the story, its includes relative to
+# $CD_PREFIX) and its manifest.  Refuses an atom Org could not give back byte for byte.
 compose_dir() {
   [ -d "$1" ] || { printf 'orgfs: not a directory: %s\n' "$1" >&2; return 1; }
   atoms_list "$1" || return 1
   cd_bad=0
   while IFS= read -r cd_a; do
     [ -z "$(tail -c 1 "$1/$cd_a")" ] || { printf 'orgfs: atom %s does not end in a newline\n' "$cd_a" >&2; cd_bad=1; }
-    ! grep -Eq '^# orgfs-(atom|compose|manifest): ' "$1/$cd_a" || { printf 'orgfs: atom %s holds a line that looks like a composition marker\n' "$cd_a" >&2; cd_bad=1; }
+    $AWK -v path="$cd_a" "$LINT_AWK" "$1/$cd_a" || cd_bad=1
   done < "$TMP/atoms"
   [ "$cd_bad" = 0 ] || return 1
+  story_of "$1" "$TMP/story" || return 1
+  [ -z "$(tail -c 1 "$TMP/story")" ] || { printf 'orgfs: %s/story.org does not end in a newline\n' "$1" >&2; return 1; }
+  : > "$TMP/incl"
+  $AWK -v top="$TMP/story" -v label="$1/story.org" -v dir0="$1" -v strict=1 -v incl="$TMP/incl" "$ATOM_AWK$EXPAND_AWK" > "$TMP/ebody" || return 1
+  sort "$TMP/atoms" > "$TMP/atoms.s"
+  $AWK 'NR == FNR { a[$0] = 1; next }
+    { seen[$0]++
+      if (!($0 in a)) { printf "orgfs: story.org includes %s, which is not an atom of this declaration\n", $0 > "/dev/stderr"; bad = 1 }
+      else if (seen[$0] > 1) { printf "orgfs: story.org includes %s twice\n", $0 > "/dev/stderr"; bad = 1 } }
+    END { for (p in a) if (!(p in seen)) { printf "orgfs: atom %s is not in story.org: the story has no #+INCLUDE for it\n", p > "/dev/stderr"; bad = 1 }
+      exit bad + 0 }' "$TMP/atoms.s" "$TMP/incl" || return 1
+  # the expanded text must split back into exactly these atoms and this story
+  scan_stage "$TMP/ebody" "$TMP/cstage" || return 1
+  while IFS= read -r cd_a; do
+    cmp -s "$TMP/cstage/$cd_a" "$1/$cd_a" || { printf 'orgfs: atom %s does not come back out of the composed text: what the story puts straight after it is taken for part of it (set that text under a heading of its own)\n' "$cd_a" >&2; return 1; }
+  done < "$TMP/atoms"
+  cmp -s "$TMP/cstage/story.org" "$TMP/story" || { printf 'orgfs: story.org does not come back out of the composed text\n' >&2; return 1; }
+  if [ -z "${3:-}" ]; then
+    cp "$TMP/ebody" "$2" || return 1
+    return 0
+  fi
+  parse_decl "$TMP/ebody" "$1"
   {
-    while IFS= read -r cd_a; do
-      printf '\n# orgfs-atom: begin %s\n' "$cd_a"
-      cat "$1/$cd_a"
-      printf '# orgfs-atom: end %s\n' "$cd_a"
-    done < "$TMP/atoms"
-  } > "$TMP/cbody" || return 1
-  {
-    printf '# orgfs-compose: 1\n'
-    printf '# orgfs-compose: composed from the atoms; edit the atoms, not this file (orgfs decompose splits it back)\n'
-    if [ "${3:-}" = m ]; then
-      printf '# orgfs-compose: every command that reads this file checks the manifest below against the atoms beside it\n'
-      parse_decl "$TMP/cbody" "$1"
-      printf '# orgfs-manifest: identity %s\n' "$FILEID"
-      atoms_list "$1" || return 1
-      while IFS= read -r cd_a; do printf '# orgfs-manifest: sha256 %s %s\n' "$(sha_file "$1/$cd_a")" "$cd_a"; done < "$TMP/atoms"
+    if [ "$3" = s ]; then
+      $AWK -v pfx="${CD_PREFIX:-}" '/^#\+INCLUDE: "/ && pfx != "" { i = index($0, "\""); $0 = substr($0, 1, i) pfx "/" substr($0, i + 1) } { print }' "$TMP/story"
+    else
+      cat "$TMP/ebody"
     fi
-    cat "$TMP/cbody"
+    printf '\n'
+    manifest_section "$1"
   } > "$2" || return 1
 }
 
-# FILE NAME: a composed file's manifest against its own atoms and against the atoms beside it.
+# FILE NAME SRC: an expanded document's manifest against its own atoms and against the atoms beside it.
+# SRC=1: FILE is the expansion of a source form, whose atoms are whatever it includes now.
 # 0: fresh, or nothing to check against (then a warning says so); 1: STALE (lines on stderr).
 # The atoms beside FILE.org are in FILE.d.  MF_IDENT is the identity the manifest states.
 MF_IDENT=
 check_fresh() {
   MF_IDENT=
-  grep -q '^# orgfs-atom: begin ' "$1" || return 0
-  if ! grep -q '^# orgfs-manifest: ' "$1"; then
+  scan list "$1" > "$TMP/flist" || return 1
+  [ -s "$TMP/flist" ] || return 0
+  scan manifest "$1" > "$TMP/mfraw" || return 1
+  if ! grep -q '^identity' "$TMP/mfraw"; then
     warn "$2: composed file has no manifest; freshness not checked"; return 0
   fi
-  MF_IDENT=$($AWK '$1=="#"&&$2=="orgfs-manifest:"&&$3=="identity"{ print $4; exit }' "$1")
-  $AWK '$1=="#"&&$2=="orgfs-manifest:"&&$3=="sha256"{ print $5 "\t" $4 }' "$1" | sort > "$TMP/mf"
-  # what the composed text itself holds, atom by atom
-  rm -rf "$TMP/fstage"; mkdir -p "$TMP/fstage"
-  $AWK -v file="$1" -v mode=list "$ATOM_AWK$DECOMP_AWK" "$1" > "$TMP/flist" || return 1
-  while IFS= read -r cf_p; do mkdir -p "$TMP/fstage/$(dirname "$cf_p")"; done < "$TMP/flist"
-  $AWK -v file="$1" -v mode=write -v stage="$TMP/fstage" "$ATOM_AWK$DECOMP_AWK" "$1" || return 1
-  while IFS= read -r cf_p; do printf '%s\t%s\n' "$cf_p" "$(sha_file "$TMP/fstage/$cf_p")"; done < "$TMP/flist" | sort > "$TMP/fe"
+  MF_IDENT=$($AWK -F'\t' '$1=="identity"{ print $2; exit }' "$TMP/mfraw")
+  $AWK -F'\t' '$1=="row"{ print $2 "\t" $3 }' "$TMP/mfraw" | sort > "$TMP/mf"
+  # what the text itself holds, atom by atom (and its story)
+  scan_stage "$1" "$TMP/fstage" || return 1
+  { cat "$TMP/slist"; echo story.org; } | while IFS= read -r cf_p; do printf '%s\t%s\n' "$cf_p" "$(sha_file "$TMP/fstage/$cf_p")"; done | sort > "$TMP/fe"
   cf_rc=0
   stale_diff "$TMP/mf" "$TMP/fe" "in the composed file itself" || cf_rc=1
+  [ "${3:-0}" = 0 ] || return "$cf_rc"
   case $2 in *.org) cf_dir=${2%.org}.d;; *) cf_dir=$2.d;; esac
   if [ -d "$cf_dir" ]; then
-    if atoms_list "$cf_dir"; then
-      while IFS= read -r cf_p; do printf '%s\t%s\n' "$cf_p" "$(sha_file "$cf_dir/$cf_p")"; done < "$TMP/atoms" | sort > "$TMP/fa"
+    if atoms_list "$cf_dir" && story_of "$cf_dir" "$TMP/dstory"; then
+      { cat "$TMP/atoms" | while IFS= read -r cf_p; do printf '%s\t%s\n' "$cf_p" "$(sha_file "$cf_dir/$cf_p")"; done
+        printf 'story.org\t%s\n' "$(sha_file "$TMP/dstory")"; } | sort > "$TMP/fa"
       stale_diff "$TMP/mf" "$TMP/fa" "in the atoms beside it, $cf_dir" || cf_rc=1
     else
       cf_rc=1
@@ -366,18 +672,24 @@ stale_diff() {
 }
 
 # DECL -> SPOKES NSP FILEID; and, when --spoke names one or the file has just one, that spoke is loaded
-# DECL is an atom directory or a composed (or plain, single) file; DECLFILE is the file that gets parsed.
+# DECL is an atom directory, an expanded file, a source form (a file with #+INCLUDE lines) or a plain
+# single file; DECLFILE is the text that gets parsed.
 load() {
+  _src=0
   if [ -d "$1" ]; then
     compose_dir "$1" "$TMP/composed" || die "cannot compose the atoms in $1"
     DECLFILE=$TMP/composed
   elif [ -f "$1" ]; then
     DECLFILE=$1
+    if grep -Eqi '^[[:space:]]*#\+include:' "$1"; then
+      expand_file "$1" "$TMP/expanded" || die "cannot expand the #+INCLUDE lines of $1"
+      DECLFILE=$TMP/expanded; _src=1
+    fi
   else
     die "cannot read declaration: $1"
   fi
   if [ -f "$1" ]; then
-    check_fresh "$DECLFILE" "$1" || die "$1 is STALE: compose it again (orgfs compose DIR --out FILE), or decompose it if the composed text is what you meant to change"
+    check_fresh "$DECLFILE" "$1" "$_src" || die "$1 is STALE: compose it again (orgfs compose DIR --out FILE), or decompose it if the composed text is what you meant to change"
   fi
   parse_decl "$DECLFILE" "$1"
   if [ -f "$1" ] && [ -n "$MF_IDENT" ] && [ "$MF_IDENT" != "$FILEID" ]; then
@@ -394,7 +706,8 @@ load() {
 
 # FILE NAME -> SPOKES NSP FILEID and the normalized rows of each spoke ($TMP/norm.SPOKE)
 parse_decl() {
-  $AWK -v decl="$2" "$ATOM_AWK$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $2"
+  scan map "$1" > "$TMP/amap" || die "declaration rejected: $2"
+  $AWK -v decl="$2" -v map="$TMP/amap" "$ATOM_AWK$PARSE_AWK" "$1" > "$TMP/raw" || die "declaration rejected: $2"
   sort "$TMP/raw" > "$TMP/all"
   SPOKES=$($AWK -F'\t' '$1=="D"&&$3=="spoke"&&$4=="name"{print $2}' "$TMP/all")
   NSP=$(printf '%s\n' "$SPOKES" | wc -l | tr -d ' ')
@@ -411,47 +724,23 @@ need_spoke() { # COMMAND
   [ -n "$SPOKE" ] || die "$1: this declaration has $NSP spokes ($(echo $SPOKES)); say which with --spoke NAME"
 }
 
-# ------------------------------------------------------------------ compose, decompose
-# decompose reads the composed file twice: "list" prints each atom's path, "write" writes each atom
-# into STAGE.  It refuses text outside the atoms (it would be lost) rather than drop it.
-DECOMP_AWK='
-function fail(m) { printf "orgfs: %s:%d: %s\n", file, NR, m > "/dev/stderr"; bad = 1 }
-BEGIN { atom = ""; bad = 0; n = 0 }
-/^# orgfs-atom: / {
-  if (NF != 4 || ($3 != "begin" && $3 != "end")) { fail("bad atom marker"); next }
-  p = $4
-  if ($3 == "begin") {
-    if (atom != "") { fail("atom " p " begins inside atom " atom); next }
-    r = atom_check(p)
-    if (r != "") { fail("atom " p ": " r); next }
-    if (p in seen) { fail("atom " p " appears twice"); next }
-    seen[p] = 1; atom = p; n++
-    if (mode == "write") { out = stage "/" p; printf "" > out }
-    else print p
-  } else {
-    if (atom != p) { fail("end marker for " p (atom == "" ? " with no atom open" : " inside atom " atom)); next }
-    if (mode == "write") close(out)
-    atom = ""
-  }
-  next
-}
-atom != "" { if (mode == "write") printf "%s\n", $0 > out; next }
-/^[ \t\r]*$/ { next }
-/^# orgfs-(compose|manifest): / { next }
-{ fail("text outside any atom would be lost: " $0) }
-END {
-  if (atom != "") { printf "orgfs: %s: atom %s is not closed\n", file, atom > "/dev/stderr"; bad = 1 }
-  if (n == 0) { printf "orgfs: %s: no atoms in it (no \"# orgfs-atom: begin\" lines)\n", file > "/dev/stderr"; bad = 1 }
-  exit bad
-}
-'
-
+# ------------------------------------------------------------------ compose, expand, decompose
 cmd_compose() {
   _dir=${1:-}; [ -n "$_dir" ] || die "compose: need DIR"
   [ -d "$_dir" ] || die "compose: $_dir is not a directory"
   case $O_OUT in "${_dir%/}"/*) die "compose: --out must not be inside $_dir (it would be taken for an atom)";; esac
-  compose_dir "$_dir" "$TMP/composed.out" m || die "compose: refused"
-  $AWK -v decl="$_dir" "$ATOM_AWK$PARSE_AWK" "$TMP/composed.out" > /dev/null || die "compose: the atoms do not make a valid declaration"
+  if [ "$O_SOURCE" = 1 ]; then
+    if [ -n "$O_OUT" ]; then
+      _od=$(dirname "$O_OUT"); [ -d "$_od" ] || die "compose: no directory $_od for $O_OUT"
+      CD_PREFIX=$(relpath "$_od" "$_dir") || die "compose: cannot work out where $_dir is from $_od"
+    else
+      CD_PREFIX=${_dir%/}
+    fi
+    [ "$CD_PREFIX" != . ] || CD_PREFIX=
+    compose_dir "$_dir" "$TMP/composed.out" s || die "compose: refused"
+  else
+    compose_dir "$_dir" "$TMP/composed.out" m || die "compose: refused"
+  fi
   find "$_dir" -type f ! -name '*.org' | while IFS= read -r _x; do warn "not an atom, left out: $_x"; done
   _n=$(wc -l < "$TMP/atoms" | tr -d ' ')
   if [ -n "$O_OUT" ]; then
@@ -462,14 +751,30 @@ cmd_compose() {
   fi
 }
 
+cmd_expand() {
+  _f=${1:-}; [ -n "$_f" ] || die "expand: need FILE"
+  [ -f "$_f" ] || die "expand: cannot read $_f"
+  expand_file "$_f" "$TMP/expand.out" || die "expand: refused"
+  if [ -n "$O_OUT" ]; then cp "$TMP/expand.out" "$O_OUT" || die "expand: cannot write $O_OUT"; else cat "$TMP/expand.out"; fi
+}
+
 cmd_decompose() {
   _f=${1:-}; _dir=${2:-}
   [ -n "$_f" ] && [ -n "$_dir" ] || die "decompose: need FILE DIR"
   [ -f "$_f" ] || die "decompose: cannot read $_f"
-  $AWK -v file="$_f" -v mode=list "$ATOM_AWK$DECOMP_AWK" "$_f" > "$TMP/dlist" || die "decompose: refused"
-  mkdir -p "$TMP/stage" || die "decompose: cannot make a staging directory"
-  while IFS= read -r _p; do mkdir -p "$TMP/stage/$(dirname "$_p")"; done < "$TMP/dlist"
-  $AWK -v file="$_f" -v mode=write -v stage="$TMP/stage" "$ATOM_AWK$DECOMP_AWK" "$_f" || die "decompose: refused"
+  if grep -Eqi '^[[:space:]]*#\+include:' "$_f"; then
+    expand_file "$_f" "$TMP/dexp" || die "decompose: cannot expand the #+INCLUDE lines of $_f"
+    _f2=$TMP/dexp
+  else
+    _f2=$_f
+  fi
+  scan_stage "$_f2" "$TMP/stage" || die "decompose: refused"
+  cp "$TMP/slist" "$TMP/dlist"
+  if [ -s "$TMP/dlist" ]; then   # the text must be what Org makes of its own story, or compose could not give it back
+    $AWK -v top="$TMP/stage/story.org" -v label="story.org of $_f" -v dir0="$TMP/stage" -v strict=1 -v incl= "$ATOM_AWK$EXPAND_AWK" > /dev/null || die "decompose: refused (the text of $_f is not what Org would make of its story)"
+  fi
+  [ -s "$TMP/dlist" ] || die "decompose: $_f holds no atoms (no heading with an :ORGFS_ATOM: property)"
+  echo story.org >> "$TMP/dlist"
   _clash=0
   while IFS= read -r _p; do
     if [ -e "$_dir/$_p" ] && ! cmp -s "$TMP/stage/$_p" "$_dir/$_p"; then
@@ -485,7 +790,7 @@ cmd_decompose() {
     mkdir -p "$_dir/$(dirname "$_p")" && cp "$TMP/stage/$_p" "$_dir/$_p" || die "decompose: cannot write $_dir/$_p"
     _n=$((_n + 1))
   done < "$TMP/dlist"
-  printf 'decompose: wrote %s atoms into %s\n' "$_n" "$_dir"
+  printf 'decompose: wrote %s atoms and story.org into %s\n' "$((_n - 1))" "$_dir"
 }
 
 # ------------------------------------------------------------------ mounts
@@ -1281,6 +1586,39 @@ footer { border-top: 2px solid var(--rule); margin-top: calc(var(--sp) * 2); pad
 CSS
 }
 
+# the expanded declaration as HTML: headings, paragraphs, lists, property drawers and tables only
+ORG_HTML_AWK='
+function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); return s }
+function inl(s,   out) {
+  s = esc(s); out = ""
+  while (match(s, /=[^= ][^=]*=/)) { out = out substr(s, 1, RSTART - 1) "<code>" substr(s, RSTART + 1, RLENGTH - 2) "</code>"; s = substr(s, RSTART + RLENGTH) }
+  return out s
+}
+function closep() { if (para) { print "</p>"; para = 0 } if (inul) { print "</ul>"; inul = 0 } }
+function closet() { if (intab) { print "</tbody>\n</table>\n</div>"; intab = 0 } }
+BEGIN { para = 0; inul = 0; intab = 0; indrw = 0; ntab = 0 }
+indrw { if ($0 == ":END:") { print "</dl>"; indrw = 0; next }
+  if (match($0, /^:[A-Za-z_-]+:/)) { k = substr($0, 2, RLENGTH - 2); v = substr($0, RLENGTH + 1); sub(/^[ \t]+/, "", v); printf "<dt>%s</dt><dd>%s</dd>\n", esc(k), esc(v) }
+  next }
+/^\*+ / { closep(); closet(); n = 0; while (substr($0, n + 1, 1) == "*") n++; h = n + 1; if (h > 6) h = 6; t = substr($0, n + 2); printf "<h%d>%s</h%d>\n", h, inl(t), h; next }
+/^:PROPERTIES:$/ { closep(); closet(); print "<dl>"; indrw = 1; next }
+/^#\+NAME:/ { next }
+/^\|/ {
+  if ($0 ~ /^\|[-+|]*$/) next
+  closep()
+  n = split($0, c, "|")
+  if (!intab) { ntab++; printf "<div class=\"scroll\" role=\"region\" aria-label=\"Table %d of the declaration\" tabindex=\"0\">\n<table>\n<caption>The table of atoms and their hashes</caption>\n<thead><tr>", ntab
+    for (m = 2; m < n; m++) { sub(/^ +/, "", c[m]); sub(/ +$/, "", c[m]); printf "<th scope=\"col\">%s</th>", inl(c[m]) }
+    print "</tr></thead>\n<tbody>"; intab = 1; next }
+  printf "<tr>"
+  for (m = 2; m < n; m++) { sub(/^ +/, "", c[m]); sub(/ +$/, "", c[m]); if (m == 2) printf "<th scope=\"row\">%s</th>", inl(c[m]); else printf "<td>%s</td>", inl(c[m]) }
+  print "</tr>"; next }
+/^[ \t]*$/ { closep(); closet(); next }
+/^- / { closet(); if (para) { print "</p>"; para = 0 } if (!inul) { print "<ul>"; inul = 1 } printf "<li>%s</li>\n", inl(substr($0, 3)); next }
+{ closet(); if (inul) { print "</ul>"; inul = 0 } if (!para) { printf "<p>"; para = 1 } else printf "\n"; printf "%s", inl($0) }
+END { closep(); closet() }
+'
+
 html_head() { # TITLE PAGE
   cat <<EOF
 <!DOCTYPE html>
@@ -1299,6 +1637,7 @@ html_head() { # TITLE PAGE
 <nav aria-label="Site">
 <ul>
 <li><a href="index.html"$(cur index "$2")>About</a></li>
+$([ "${_allpublic:-0}" != 1 ] || printf '<li><a href="declaration.html"%s>The declaration</a></li>\n' "$(cur declaration "$2")")
 <li><a href="gaps.html"$(cur gaps "$2")>A view with its gaps</a></li>
 <li><a href="licensing.html"$(cur licensing "$2")>Licensing stack</a></li>
 <li><a href="rights.html"$(cur rights "$2")>Your rights on this site</a></li>
@@ -1424,16 +1763,16 @@ Org file, the <em>declaration</em>, which every machine holds identically.</p>
 
 <h2>What was observed</h2>
 <p><span class="tag">observed</span>By <code>orgfs check</code> and <code>orgfs plan</code> on the declaration this site was built from.
-The declaration is stored as atoms: one small Org file for each spoke and one for each member.
-<code>orgfs compose</code> builds the one literate file from them and <code>orgfs decompose</code> splits it back,
-byte for byte; every command gives the same identity whichever form it is given.
+The declaration is stored as atoms: small Org files, each beginning with its own heading, and a story that sets them in order with Org&#39;s own <code>#+INCLUDE</code>.
+<code>orgfs compose</code> builds the one file that travels alone (what Org&#39;s export makes of the story) and <code>orgfs decompose</code> splits it back
+at the <code>:ORGFS_ATOM:</code> headings, byte for byte; every command gives the same identity whichever form it is given.
 Each spoke has its own identity (the SHA-256 of its normalized properties) and the file has one
 made from the spokes&#39; identities, sorted, so neither the order of the spokes nor the prose changes either.</p>
 EOF
     for _s in $SPOKES; do load_spoke "$_s"; site_spoke; done
     if [ "$_allpublic" = 1 ]; then
       cat <<EOF
-<p>The declaration file itself, prose included: <a href="declaration.org">declaration.org</a>.</p>
+<p>The declaration itself, prose included, as <a href="declaration.html">a page</a> and as the file <a href="declaration.org">declaration.org</a>.</p>
 EOF
     else
       cat <<EOF
@@ -1444,6 +1783,9 @@ EOF
 
 <h2>What was judged</h2>
 <ul>
+<li><span class="tag">choice</span>The file is Org&#39;s own: atoms are brought in by <code>#+INCLUDE</code> and marked by an <code>:ORGFS_ATOM:</code> property. Reason: a marker of our own would be a small language to learn,
+and Org already has both an include and a place for a property. Would be wrong if Org&#39;s export expands the same source to other bytes than <code>orgfs compose</code> writes;
+<code>tests/org_check.el</code> asks Emacs, and says NOT CHECKED where there is none.</li>
 <li><span class="tag">choice</span>Atoms are what is stored; the single file is composed from them. Reason: a change to one
 member is a change to one small file, and the one literate file is still there to read, at any time, as the
 composition. Would be wrong if reading a spoke means opening so many files that the composed file is what people
@@ -1470,6 +1812,23 @@ EOF
   if [ "$_allpublic" = 1 ]; then
     if [ -d "$_decl" ]; then ( compose_dir "$_decl" "$_out/declaration.org" m ) || die "site: cannot compose $_decl"
     else cp "$DECLFILE" "$_out/declaration.org"; fi
+    {
+      html_head "The declaration" declaration
+      cat <<EOF
+<h1>The declaration, as a story</h1>
+<p class="status">Status: the declaration this site was built from (file identity <code>$FILEID</code>), composed from its atoms and shown as a page. The same text, as Org, is <a href="declaration.org">declaration.org</a>.</p>
+EOF
+      $AWK "$ORG_HTML_AWK" "$_out/declaration.org"
+      cat <<EOF
+
+<h2>Not checked</h2>
+<ul>
+<li>That the hosts named in the story are as it says; the story marks which sentences are facts, which are judgements and which are examples, and none of them was checked from this page.</li>
+<li>That a browser shows this page as intended in any particular browser or printer.</li>
+</ul>
+EOF
+      html_foot
+    } > "$_out/declaration.html"
   fi
 
   # the demo world: a view for a visitor, gaps and all
@@ -1625,10 +1984,10 @@ orgfs_run() { ${ORGFS_SHELL:-sh} "$_self" "$@"; }
 #   vault      sealed   2 members  2 stripes 1 replica    (nothing may be put in a sealed spoke)
 mw_spoke() { # NAME RING STRIPES REPLICAS VISIBILITY
   mkdir -p "$mw/world.d/$1" || die "demo: cannot create $mw/world.d/$1"
-  printf '* spoke %s\n:PROPERTIES:\n:RING: %s\n:STRIPES: %s\n:REPLICAS: %s\n:VISIBILITY: %s\n:END:\n' "$1" "$2" "$3" "$4" "$5" > "$mw/world.d/$1/spoke.org"
+  printf '* spoke %s\n:PROPERTIES:\n:ORGFS_ATOM: %s/spoke.org\n:RING: %s\n:STRIPES: %s\n:REPLICAS: %s\n:VISIBILITY: %s\n:END:\n' "$1" "$1" "$2" "$3" "$4" "$5" > "$mw/world.d/$1/spoke.org"
 }
 mw_member() { # SPOKE HOST ROOT
-  printf '** member %s\n:PROPERTIES:\n:ROOT: %s\n:TRANSPORT: local\n:END:\n' "$2" "$3" > "$mw/world.d/$1/member-$2.org"
+  printf '* member %s\n:PROPERTIES:\n:ORGFS_ATOM: %s/member-%s.org\n:ROOT: %s\n:TRANSPORT: local\n:END:\n' "$2" "$1" "$2" "$3" > "$mw/world.d/$1/member-$2.org"
 }
 make_world() {
   mw=$1; mkdir -p "$mw" || die "demo: cannot create $mw"
@@ -1636,7 +1995,7 @@ make_world() {
   mw_n=1; while [ "$mw_n" -le 5 ]; do mkdir -p "$mw/demo$mw_n"; mw_n=$((mw_n + 1)); done
   mw_n=1; while [ "$mw_n" -le 3 ]; do mkdir -p "$mw/private/demo$mw_n"; mw_n=$((mw_n + 1)); done
   mkdir -p "$mw/vault/demo4" "$mw/vault/demo5" "$mw/world.d"
-  printf '#+TITLE: world (throwaway demo declaration)\n\nThree spokes, three visibilities, over local directories standing in for hosts.\nThe atoms are the source; world.org is composed from them.\n' > "$mw/world.d/preface.org"
+  printf '* world, a throwaway demo declaration\n:PROPERTIES:\n:ORGFS_ATOM: preface.org\n:END:\nThree spokes, three visibilities, over local directories standing in for hosts.\nThe atoms are the record; world.org is composed from them.\n' > "$mw/world.d/preface.org"
   mw_spoke licensing GREAT 5 2 public
   mw_n=1; while [ "$mw_n" -le 5 ]; do mw_member licensing "demo$mw_n" "$mw/demo$mw_n"; mw_n=$((mw_n + 1)); done
   mw_spoke ring-notes GRAIN 3 2 private
@@ -1732,6 +2091,7 @@ while [ "$_n" -gt 0 ]; do
         --into) O_INTO=$_v;; --root) O_ROOT=$_v;; --decl) O_DECL=$_v;;
       esac;;
     --no-mounts) O_NOMOUNTS=1;;
+    --source) O_SOURCE=1;;
     -*) die "unknown option: $_a";;
     *) set -- "$@" "$_a";;
   esac
@@ -1739,6 +2099,7 @@ done
 case $_cmd in
   compose) cmd_compose "$@";;
   decompose) cmd_decompose "$@";;
+  expand) cmd_expand "$@";;
   check) cmd_check "$@";;
   plan) cmd_plan "$@";;
   agree) cmd_agree "$@";;

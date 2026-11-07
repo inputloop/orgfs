@@ -1,5 +1,7 @@
 ** member gw34
 :PROPERTIES:
+:ORGFS_ATOM: licensing/member-gw34.org
 :ROOT: /spokes/gw34/storage
 :TRANSPORT: sshfs
 :END:
+gw34 is the member where this tool lives. Fact: it hosts the orgfs container. Example, not a fact: its storage is shown here as reached over sshfs like the others, so that the declaration is the same on every host.

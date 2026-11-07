@@ -1,0 +1,9 @@
+** If you run a member
+:PROPERTIES:
+:ORGFS_ATOM: next-member.org
+:END:
+This is the second thing to do next, if one of the hosts is yours.
+
+Hold this page, or the atoms it was composed from, identically on every member. Each host then works out its own part with orgfs plan, and orgfs check refuses a page whose atoms have changed since it was composed.
+
+Then put the register into the spoke and read it back from another member. That is the whole test of the spoke: a licence is shown in the open only if you can fetch it from a host that did not write it.

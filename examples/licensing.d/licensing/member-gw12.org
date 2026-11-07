@@ -1,5 +1,7 @@
 ** member gw12
 :PROPERTIES:
+:ORGFS_ATOM: licensing/member-gw12.org
 :ROOT: /spokes/gw12/storage
 :TRANSPORT: local
 :END:
+gw12 is the first member in the story. Fact: it holds /spokes, and it mounts the storage of gw14 and gw16 over sshfs. Judged: that makes its own pieces the ones it can reach fastest, which is why its transport is local and the others' are not.

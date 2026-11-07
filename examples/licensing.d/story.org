@@ -1,0 +1,31 @@
+#+INCLUDE: "preface.org"
+
+#+INCLUDE: "licensing/spoke.org"
+
+* Who takes part
+
+The members are named in the order of the story. Each one says why it is here, and says whether that is a fact about the host or a judgement.
+
+#+INCLUDE: "licensing/member-gw12.org"
+
+#+INCLUDE: "licensing/member-gw14.org"
+
+#+INCLUDE: "licensing/member-gw16.org"
+
+#+INCLUDE: "licensing/member-gw34.org"
+
+* What is shared, and what is kept back
+
+A declaration that is honest about its edges says both. These two parts do.
+
+#+INCLUDE: "shared.org"
+
+#+INCLUDE: "kept-back.org"
+
+* What to do next
+
+Two things to do, depending on who you are.
+
+#+INCLUDE: "next-reader.org"
+
+#+INCLUDE: "next-member.org"

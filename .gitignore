@@ -2,3 +2,4 @@ _site/
 __pycache__/
 *.pyc
 examples/licensing.org
+examples/licensing-source.org

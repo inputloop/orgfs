@@ -1,5 +1,7 @@
 ** member gw16
 :PROPERTIES:
+:ORGFS_ATOM: licensing/member-gw16.org
 :ROOT: /spokes/gw16/storage
 :TRANSPORT: sshfs
 :END:
+gw16 is a third place, reached the same way as gw14. Judged: with 2 copies of every stripe spread over four members, losing any one of them, gw16 included, leaves every stripe with a copy.

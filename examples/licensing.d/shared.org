@@ -1,0 +1,9 @@
+** What is shared
+:PROPERTIES:
+:ORGFS_ATOM: shared.org
+:END:
+This part says what any reader of the spoke is shown.
+
+A reader is shown the declaration itself, which is this page; the name of each member, where its storage is and how it is reached; which stripes each member holds; and the register of licences, which is the thing the spoke exists to keep. Each item a reader is shown names the place it came from.
+
+The register is also published as a page of its own, with its source for every licence, and as plain tab-separated text.

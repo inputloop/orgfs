@@ -1,0 +1,13 @@
+** What is kept back, and why
+:PROPERTIES:
+:ORGFS_ATOM: kept-back.org
+:END:
+This part says what a reader may find missing, and the reason, in words.
+
+Nothing in this spoke is hidden on purpose, because it is public. What can still be missing is something nobody chose to hide: a machine that cannot see a member's storage cannot read it. A view is built on one machine. When that machine cannot reach a member's store, the view does not pretend. It writes down that the store was not reachable from the machine that built the view, names the line of this page that says where the store should be, says who could read it (that member, or any host with the same path mounted) and gives the command to run there.
+
+Observed: on 2026-11-07 a view of this declaration built on a build container, which has no /spokes, held one such record for each of the four members.
+
+For comparison, and as how orgfs behaves rather than a fact about these hosts: a private spoke shows a stranger that it exists but keeps the root paths back, and a sealed spoke shows only its name. The reason is always written beside the gap, so a reader can ask for what was kept back instead of guessing.
+
+One thing is kept back everywhere: orgfs does not log anyone in. A host's name given with --as is a claim, not a login, so the record says who could read something and does not prove who is asking.
