@@ -21,8 +21,20 @@ check-shells:
 prove-red:
 	$(PYTHON) tests/prove_red.py
 
+# make site                  the example stack (read on another machine); this is what the tests use
+# make site STACK=DIR ...    the stack in DIR, read by `orgfs stack DIR` on THIS machine during this build;
+#                            then BUILD_RUN (STAMP-HASH12), BUILD_COMMIT (40 hex) and BUILD_LOG are named,
+#                            and the page says it is live only if they and the atoms agree (README.org, CI)
+STACK ?=
+BUILD_RUN ?=
+BUILD_COMMIT ?=
+BUILD_LOG ?=
 site:
-	sh bin/orgfs site examples/licensing.d _site --stack examples/stack.d
+	@if [ -n "$(STACK)" ]; then \
+	  sh bin/orgfs site examples/licensing.d _site --stack "$(STACK)" --live --build-run "$(BUILD_RUN)" --build-commit "$(BUILD_COMMIT)" --build-log "$(BUILD_LOG)"; \
+	else \
+	  sh bin/orgfs site examples/licensing.d _site --stack examples/stack.d; \
+	fi
 
 # the composed file is generated from the atoms; it is not kept in git
 compose:

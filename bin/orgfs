@@ -73,9 +73,11 @@ usage: orgfs COMMAND ...
                              follow an object to the hosts that materialized it
   layout [--root PREFIX] [--decl DECL]
                              check the host's fixed layout (/c4, /spokes, owners)
-  site DECL OUT [--stack DIR]
+  site DECL OUT [--stack DIR [--live --build-run STAMP-HASH12 --build-commit SHA --build-log FILE]]
                              render a static, script-free HTML site into OUT; with --stack, also
-                             stack.html from a stack directory (tools, licence guesses, corrections)
+                             stack.html from a stack directory (tools, licence guesses, corrections);
+                             with --live that page says the machine that built the site read the
+                             stack, but only if the atoms were read on this host during this build
   demo [DIR]                 the demo over 5 local directories and 3 spokes
   who REPO [PATH...] [--since DATE] [--until DATE] [--out FILE]
                              who worked on a local git repository, over time: an Org document in
@@ -487,7 +489,7 @@ END {
 '
 
 # options, filled in by main
-O_SAYS=; O_BY=; O_WHY=; O_STACK=; O_SINCE=; O_UNTIL=; O_SEED=; O_REPO=; O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0; O_SOURCE=0
+O_SAYS=; O_BY=; O_WHY=; O_STACK=; O_SINCE=; O_UNTIL=; O_SEED=; O_REPO=; O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0; O_SOURCE=0; O_LIVE=0; O_BRUN=; O_BCOMMIT=; O_BLOG=
 
 spoke_norm() { # SPOKE -> its data rows in the 0.1.0 shape, sorted bytewise
   $AWK -F'\t' -v s="$1" '$1=="D"&&$2==s{ l=$3; for(i=4;i<=NF;i++) l=l "\t" $i; print l }' "$TMP/all" | sort
@@ -1757,7 +1759,7 @@ cmd_who() {
 #   :SEEN_HERE:  every fact in it was read on this host, now
 #   :CARRIED:    it came from the seed (a stack an earlier run made, perhaps elsewhere); only the version
 #                command was run again here, and the atom says so in its own properties.
-ST_TOOLS="sh awk git python3 emacs org nginx"
+ST_TOOLS="sh awk make git python3 emacs org rsync nginx"
 ST_NOTE_COMMITS='NOT CHECKED (needs the upstream tree; intake is a later slice)'
 
 st_sane() { printf '%s' "$1" | tr '\t' ' ' | tr -d '\000-\010\013-\037' | head -n 1; }
@@ -2830,13 +2832,44 @@ function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\
 function base(p) { sub(/^.*\//, "", p); return p }
 function pk(p,   a, n) { n = split(p, a, "/"); return a[2] }
 function plural(n, one, many) { return n == 1 ? "1 " one : n " " many }
+function cap(s) { return toupper(substr(s, 1, 1)) substr(s, 2) }
+# the Debian release the host names itself (READ_ENV: "...; Debian GNU/Linux 12 (bookworm)"), or nothing
+function codename(env,   m) {
+  if (match(env, /Debian GNU\/Linux [0-9.]+ \([a-z]+\)/)) { m = substr(env, RSTART, RLENGTH); sub(/^.*\(/, "", m); sub(/\)$/, "", m); return m }
+  return ""
+}
+function usedfor(t) {
+  if (t == "sh") return "ran every script and every make recipe of this build"
+  if (t == "awk") return "did orgfs'"'"'s text handling (orgfs uses gawk or mawk)"
+  if (t == "make") return "ran make check, make prove-red and make site"
+  if (t == "git") return "fetched the commit that was built and checked it out"
+  if (t == "python3") return "ran the test suites (tests/run_all.py) and the planted-fault runs"
+  if (t == "emacs") return "ran tests/org_check.el, the check in which Org reads every composed file"
+  if (t == "org") return "was the second reader in that check (Org is the library inside Emacs)"
+  if (t == "rsync") return "copied the finished site into the folder the web server serves"
+  if (t == "nginx") return "serves the page you are reading"
+  return ""
+}
+function gapsof(f, t,   i, h, k, shape, how, why1, route, line) {
+  if (NG[f] == 0) { printf "<p><span class=\"tag\">observed</span>No gap records in this tool&#39;s atom.</p>\n"; return }
+  printf "<h3>Gaps</h3>\n<ul>\n"
+  for (i = 1; i <= NG[f]; i++) {
+    h = GA[f, i]; k = GK[f, h, "WHAT_KIND"]; shape = GK[f, h, "WHAT_SHAPE"]; how = GK[f, h, "HOW"]; why1 = GK[f, h, "WHY"]; route = GK[f, h, "ROUTE"]
+    if (k == "commits") line = "Which commits make this version distinct: not read yet (needs the upstream tree)."
+    else { line = (substr(shape, 1, length(t)) == t ? shape : cap(shape)) ": " how; if (line !~ /[.]$/) line = line "."; if (why1 != "") line = line " Why: " why1 (why1 ~ /[.]$/ ? "" : ".") }
+    printf "<li><span class=\"tag\">gap</span>%s%s</li>\n", esc(line), (route != "" && k != "commits" ? " What would fill it: " esc(route) "." : "")
+  }
+  printf "</ul>\n"
+}
 BEGIN { FS = "\t"; nt = 0 }
 {
   f = $1; h = $2; k = $3; v = $4
   if (f ~ /^tool-/) {
+    if (k ~ /^__/) { T[f, k] = v; next }
     if (k == "ORGFS_ATOM") { MH[f] = h; TF[f] = 1 }
     if (h == MH[f]) T[f, k] = v
     else if (h == "licence guess") LG[f, k] = v
+    else if (h ~ /^gap /) { if (!((f, h) in GS)) { GS[f, h] = 1; GA[f, ++NG[f]] = h }; GK[f, h, k] = v }
   } else if (f ~ /^guesses\//) {
     P = pk(f)
     if (!(f in GF)) { GF[f] = 1; GL[P, ++GN[P]] = f }
@@ -2855,20 +2888,41 @@ BEGIN { FS = "\t"; nt = 0 }
 END {
   n = split(order, ord, " ")
   for (i = 1; i <= n; i++) { t = ord[i]; f = "tool-" t ".org"; if (f in TF) { nt++; TL[nt] = f; TN[nt] = t } }
-  printf "<h1>The tools orgfs stands on, and how sure we are of their licences</h1>\n"
   f0 = TL[1]
-  printf "<p class=\"status\">Status: orgfs %s, before 1.0. %s tools read by <code>orgfs stack</code> on %s at %s; the facts below are the ones in the atoms, not new ones. Nothing on this page says the tests passed; run <code>make check</code>.</p>\n", version, nt, esc(T[f0, "READ_ON"]), esc(T[f0, "READ_AT"])
+  if (live == 1) {
+    printf "<h1>The machine that built this page, and how sure we are of its licences</h1>\n"
+    printf "<p>This page was built and tested by the machine described below; it read its own tools while building it. The build is <a href=\"/ci/runs/%s.log\">run %s</a>, of commit <a href=\"https://github.com/inputloop/orgfs/commit/%s\">%s</a>.</p>\n", esc(brun), esc(brun), esc(bcommit), esc(substr(bcommit, 1, 12))
+    printf "<p class=\"status\">Status: orgfs %s, before 1.0. %s tools read by <code>orgfs stack</code> on %s (%s) between %s and the end of that build; the facts below are the ones in the atoms, not new ones. Nothing on this page says the tests passed: the log of the run does.</p>\n", version, nt, esc(T[f0, "READ_ON"]), esc(T[f0, "READ_ENV"]), esc(T[f0, "READ_AT"])
+  } else {
+    printf "<h1>The tools orgfs stands on, and how sure we are of their licences</h1>\n"
+    printf "<p>These are the tools of an example machine, <code>%s</code>, read at %s. They were not read by the machine that built this page, so nothing below says what built it.</p>\n", esc(T[f0, "READ_ON"]), esc(T[f0, "READ_AT"])
+    if (asked == 1) printf "<p><span class=\"tag\">observed</span>This build asked for a stack read on the build machine and did not get one: %s.</p>\n", esc(why)
+    printf "<p class=\"status\">Status: orgfs %s, before 1.0. %s tools read by <code>orgfs stack</code> on %s at %s; the facts below are the ones in the atoms, not new ones. Nothing on this page says the tests passed; run <code>make check</code>.</p>\n", version, nt, esc(T[f0, "READ_ON"]), esc(T[f0, "READ_AT"])
+  }
   printf "<p><span class=\"tag\">observed</span>Each tool below is an atom (an Org file) that quotes the command that gave its version and the licence names its Debian package states in its own copyright file. This page adds a <em>confidence</em>: how much of the wording of that copyright file also stands in a licence text this host already holds in a machine-readable form (the files in <code>/usr/share/common-licenses</code> and the <code>License:</code> paragraphs of machine-readable copyright files on the same host).</p>\n"
   printf "<p><span class=\"tag\">observed</span>The measure is <em>shingle containment</em>, version 1: lower-case the words, cut them into runs of 4, and count which words of a stanza lie inside a run that a reference also holds. The score is that share. The words that match no reference are listed in the guess, because they are where the file says something the reference does not. The reference texts themselves are atoms, each with its name, path, SHA-256 and where its name came from. No network call and no model call is made.</p>\n"
   printf "<p><span class=\"tag\">judged</span>The bands are a gap of at most 4 per cent of the words for <em>high</em>, 9 for <em>moderate</em> and 17 for <em>low</em>; more than that stays a gap, and says what kind. The numbers 4, 9 and 17 are house numbers, invented, not measured. Would be wrong if two stanzas with the same meaning get bands more than one step apart, or one with a different meaning gets a high band; the corrections below are where that would show.</p>\n"
+  if (live == 1) printf "<p><span class=\"tag\">judged</span>The line &quot;How this build used it&quot; under each tool is what the Makefile and the CI script call; this page did not watch the tools run. Would be wrong if the log of the run shows a step that ran a different tool.</p>\n"
   printf "<p><span class=\"tag\">asked</span>Corwin Brust, 2026-11-08, 00:50: &quot;let&#39;s see if we can score licenses per our confidence we understanding the meaning of the words&quot; and &quot;provide access to the history (if there is any) of each of our guesses&quot;.</p>\n"
+  if (live == 1) printf "<p><span class=\"tag\">asked</span>Corwin Brust, 2026-11-08, 08:32: &quot;orgfs showing it&#39;s own toolchain is the MVP for the site&quot;.</p>\n"
   for (i = 1; i <= nt; i++) {
     f = TL[i]; t = TN[i]; pkg = T[f, "PACKAGE"]; sub(/:.*$/, "", pkg)
     printf "<h2 id=\"tool-%s\">%s</h2>\n", esc(t), esc(t)
     printf "<dl>\n"
-    printf "<dt>Version</dt><dd>%s</dd>\n", esc(T[f, "VERSION"] == "" ? "not read" : T[f, "VERSION"])
-    if (pkg == "") { printf "<dt>Package</dt><dd>not read (see the gap records in <a href=\"stack/%s\">the atom</a>)</dd>\n</dl>\n", esc(f); continue }
-    printf "<dt>Package</dt><dd>%s %s</dd>\n", esc(pkg), esc(T[f, "PACKAGE_VERSION"])
+    if (live == 1 && usedfor(t) != "") printf "<dt>How this build used it</dt><dd>%s</dd>\n", esc(usedfor(t))
+    if (live == 1) printf "<dt>Read</dt><dd>on %s at %s, during this build</dd>\n", esc(T[f, "READ_ON"]), esc(T[f, "READ_AT"])
+    else printf "<dt>Read</dt><dd>on %s (%s) at %s, not on the machine that built this page</dd>\n", esc(T[f, "READ_ON"]), esc(T[f, "READ_ENV"]), esc(T[f, "READ_AT"])
+    cmd = T[f, "__CMD"]; sub(/^\$ /, "", cmd)
+    printf "<dt>Version</dt><dd>%s", esc(T[f, "VERSION"] == "" ? (T[f, "PRESENT"] == "yes" ? "the tool printed none (see the gap below); the package version is under Package" : "not read") : T[f, "VERSION"])
+    if (T[f, "VERSION"] != "" && cmd != "") printf "<br>as it reported itself, by <code>%s</code>", esc(cmd)
+    printf "</dd>\n"
+    if (pkg == "") { printf "<dt>Package</dt><dd>not read (see the gap records below and in <a href=\"stack/%s\">the atom</a>)</dd>\n</dl>\n", esc(f); gapsof(f, t); continue }
+    src = T[f, "SOURCE_PACKAGE"]; cn = codename(T[f, "READ_ENV"])
+    printf "<dt>Package</dt><dd>%s %s", esc(pkg), esc(T[f, "PACKAGE_VERSION"])
+    printf "; source package %s; upstream version %s", esc(src), esc(T[f, "UPSTREAM_VERSION"])
+    if (cn != "") printf ". Debian pages, as links only (nothing is fetched): <a href=\"https://packages.debian.org/%s/%s\">packages.debian.org/%s/%s</a> and <a href=\"https://tracker.debian.org/pkg/%s\">tracker.debian.org/pkg/%s</a>", esc(cn), esc(pkg), esc(cn), esc(pkg), esc(src), esc(src)
+    else printf ". The host does not name a Debian release, so no link to Debian is given"
+    printf "</dd>\n"
     printf "<dt>Licence names the package states</dt><dd>%s</dd>\n", esc(T[f, "LICENSES"] == "" ? "none: the copyright file has no License: line" : T[f, "LICENSES"])
     best = ""
     for (j = 1; j <= ZN[pkg]; j++) { z = ZL[pkg, j]; if (ZP[z, "STATE"] == "approved" && (best == "" || ZP[z, "APPROVED_AT"] > ZP[best, "APPROVED_AT"] || (ZP[z, "APPROVED_AT"] == ZP[best, "APPROVED_AT"] && z > best))) best = z }
@@ -2877,17 +2931,21 @@ END {
     if (best != "") printf "<dt>In effect</dt><dd><strong>%s</strong>, an approved correction proposed by %s and approved by %s on %s (reason: %s). <a href=\"stack/%s\">The correction</a>.</dd>\n", esc(ZP[best, "SAYS"]), esc(ZP[best, "PROPOSED_BY"]), esc(ZP[best, "APPROVED_BY"]), esc(ZP[best, "APPROVED_AT"]), esc(ZP[best, "WHY"]), esc(best)
     else if (gh != "") printf "<dt>In effect</dt><dd>The machine guess below; no correction has been approved.</dd>\n"
     else printf "<dt>In effect</dt><dd>Nothing: there is no guess for this package.</dd>\n"
-    if (gh == "") { printf "</dl>\n<p><span class=\"tag\">observed</span>No guess: the copyright file of this package was not read here.</p>\n"; continue }
+    if (gh == "") { printf "</dl>\n<p><span class=\"tag\">observed</span>No guess: the copyright file of this package was not read here.</p>\n"; gapsof(f, t); continue }
+    if (GP[gh, "SUMMARY"] != "") printf "<dt>Confidence</dt><dd>%s (method %s, version %s)</dd>\n", esc(GP[gh, "SUMMARY"]), esc(GP[gh, "METHOD"]), esc(GP[gh, "METHOD_VERSION"])
+    else if (GP[gh, "STANDARD_STANZAS_NOT_SCORED"] + 0 > 0) printf "<dt>Confidence</dt><dd>No number: the file names its licences in a form a program can read (%s paragraphs), so they are taken as stated and nothing was left to score (method %s, version %s).</dd>\n", esc(GP[gh, "STANDARD_STANZAS_NOT_SCORED"]), esc(GP[gh, "METHOD"]), esc(GP[gh, "METHOD_VERSION"])
+    else printf "<dt>Confidence</dt><dd>No number: nothing in the copyright file was left to score (method %s, version %s).</dd>\n", esc(GP[gh, "METHOD"]), esc(GP[gh, "METHOD_VERSION"])
     printf "<dt>Machine guess%s</dt><dd>made %s by %s version %s from the %s copyright file <code>%s</code> (SHA-256 <code>%s</code>); <a href=\"stack/%s\">the guess atom</a>.</dd>\n", (best != "" ? " (kept)" : ""), esc(GP[gh, "MADE_AT"]), esc(GP[gh, "METHOD"]), esc(GP[gh, "METHOD_VERSION"]), esc(GP[gh, "FORMAT"]), esc(GP[gh, "FILE_READ"]), esc(GP[gh, "FILE_SHA256"]), esc(gh)
     printf "<dt>History</dt><dd>%s:", plural(GN[pkg], "guess", "guesses")
     for (j = 1; j <= GN[pkg]; j++) { g = GL[pkg, j]; printf "%s <a href=\"stack/%s\">%s</a> (%s)", (j > 1 ? ";" : ""), esc(g), esc(GP[g, "MADE_AT"]), esc(GP[g, "SUMMARY"] == "" ? "nothing to score" : GP[g, "SUMMARY"]) }
-    printf ". Each links to the one before and after it.</dd>\n"
+    printf ". Each links to the one before and after it. A new guess is added only when the copyright file, the reference texts or the method changed.</dd>\n"
     printf "<dt>Corrections</dt><dd>"
     if (ZN[pkg] == 0) printf "none yet"
     for (j = 1; j <= ZN[pkg]; j++) { z = ZL[pkg, j]; printf "%s<a href=\"stack/%s\">%s says %s</a> (%s%s)", (j > 1 ? "; " : ""), esc(z), esc(ZP[z, "PROPOSED_BY"]), esc(ZP[z, "SAYS"]), esc(ZP[z, "STATE"]), (ZP[z, "STATE"] == "approved" ? " by " esc(ZP[z, "APPROVED_BY"]) : "") }
-    printf "</dd>\n</dl>\n"
+    printf ". <a href=\"#correct\">How to offer one</a>.</dd>\n</dl>\n"
     if (GP[gh, "FORMAT"] == "dep5" && GP[gh, "STANDARD_STANZAS_NOT_SCORED"] + 0 > 0)
       printf "<p><span class=\"tag\">observed</span>%s paragraphs of this machine-readable file carry only standard short names (%s). They state their licence in a form a program can read, so they are taken as stated and not scored.</p>\n", esc(GP[gh, "STANDARD_STANZAS_NOT_SCORED"]), esc(GP[gh, "STANDARD_NAMES"])
+    gapsof(f, t)
     if (SN[gh] == 0) { printf "<p><span class=\"tag\">observed</span>Nothing in this file was left to score.</p>\n"; continue }
     printf "<div class=\"scroll\" role=\"region\" aria-label=\"Stanzas scored for %s\" tabindex=\"0\">\n<table>\n<caption>Stanzas of the copyright file of %s, scored (guess %s)</caption>\n<thead><tr><th scope=\"col\">Stanza</th><th scope=\"col\">Words</th><th scope=\"col\">Confidence</th><th scope=\"col\">Matches</th></tr></thead>\n<tbody>\n", esc(pkg), esc(pkg), esc(base(gh))
     for (j = 1; j <= SN[gh]; j++) {
@@ -2904,16 +2962,73 @@ END {
   printf "<li>That a name typed in <code>--by</code> is the person it names: orgfs does not authenticate it, so the rule that a proposer cannot approve is about names, not people.</li>\n"
   printf "<li>That the standard short names list (<code>share/dep5-names.txt</code>) matches the DEP-5 specification: it was written from memory, and the specification is not on the host.</li>\n"
   printf "<li>That any band is right. The edges are invented, and no reader has yet compared a band with a lawyer&#39;s reading.</li>\n"
-  printf "<li>Paragraphs of a machine-readable file whose names are standard are not scored, even where their text might disagree with the name.</li>\n</ul>\n"
+  printf "<li>Paragraphs of a machine-readable file whose names are standard are not scored, even where their text might disagree with the name.</li>\n"
+  printf "<li>Which commits make each version distinct: that needs the upstream tree of each tool, which is not read yet.</li>\n"
+  if (live == 1) {
+    printf "<li>That the tools read are the ones that ran the tests: they are read after the tests, on the same machine, and a tool replaced between the two would show here as the new one.</li>\n"
+    printf "<li>That the Debian links lead where the package names say: they are links, and nothing is fetched.</li>\n"
+    printf "<li>That earlier builds had the same tools: the tool atoms are written again by each build and only the licence guesses keep a history.</li>\n"
+  }
+  printf "</ul>\n"
 }
 '
+
+# Is the stack the build machine's own?  Sets SK_LIVE (1 only if every claim of "this machine built this page" holds)
+# and, when it is 0, SK_WHY (the reason, in plain words).  Nothing here is read from the network.
+#   asked   --live was given (make site STACK=DIR does)
+#   holds   a build run named STAMP-HASH12 and a 40-hex commit that begins with that hash; every tool atom is tagged
+#           SEEN_HERE (not CARRIED), was read on this host (uname -n), and was read at or after the build's own stamp
+SK_LIVE=0; SK_WHY=; SK_HOST=; SK_EMACS=; SK_ORG=; SK_OCLINE=; SK_OCWHY=
+site_live() { # STACKDIR
+  SK_LIVE=0; SK_WHY=; SK_OCLINE=; SK_OCWHY=; SK_EMACS=; SK_ORG=
+  SK_HOST=$(st_sane "$(uname -n 2>/dev/null)")
+  [ -n "$1" ] || return 0
+  if [ "$O_LIVE" != 1 ]; then SK_WHY="this site was built from an example stack that was read on another machine"; return 0; fi
+  if [ -z "$O_BRUN" ]; then SK_WHY="no build run was named (--build-run), so there is no log to link and no start time to compare"; return 0; fi
+  printf '%s' "$O_BRUN" | grep -Eq '^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$' || { SK_WHY="the build run name is not STAMP-HASH12"; return 0; }
+  printf '%s' "$O_BCOMMIT" | grep -Eq '^[0-9a-f]{40}$' || { SK_WHY="no 40-character commit was named (--build-commit)"; return 0; }
+  _h12=${O_BCOMMIT%"${O_BCOMMIT#????????????}"}
+  [ "${O_BRUN#*Z-}" = "$_h12" ] || { SK_WHY="the build run $O_BRUN does not name the commit $O_BCOMMIT"; return 0; }
+  _sn=$(printf '%s' "${O_BRUN%%-*}" | tr -d TZ)
+  _n=0
+  for _f in "$1"/tool-*.org; do
+    [ -f "$_f" ] || continue
+    _n=$((_n + 1)); _b=${_f##*/}
+    _tag=$(head -n 1 "$_f" | sed -n 's/^\* [^ ]*  *//p')
+    [ "$_tag" = ":SEEN_HERE:" ] || { SK_WHY="the atom $_b is not marked as read on this machine (its heading tag is '$_tag'; a carried atom came from a seed)"; return 0; }
+    _on=$(prop_of READ_ON "$_f")
+    [ "$_on" = "$SK_HOST" ] || { SK_WHY="the atom $_b was read on '$_on', and this site is built on '$SK_HOST'"; return 0; }
+    _at=$(prop_of READ_AT "$_f"); _an=$(printf '%s' "$_at" | tr -d ':TZ-')
+    case $_an in ''|*[!0-9]*) SK_WHY="the atom $_b has no usable READ_AT"; return 0;; esac
+    [ "$_an" -ge "$_sn" ] || { SK_WHY="the atom $_b was read at $_at, before this build began (${O_BRUN%%-*}): the stack step did not run in this build"; return 0; }
+  done
+  [ "$_n" -gt 0 ] || { SK_WHY="there are no tool atoms in $1"; return 0; }
+  SK_LIVE=1
+  SK_EMACS=$(prop_of VERSION "$1/tool-emacs.org" 2>/dev/null); SK_ORG=$(prop_of VERSION "$1/tool-org.org" 2>/dev/null)
+  if [ -z "$O_BLOG" ]; then SK_OCWHY="no log of this build was named (--build-log)"
+  elif [ ! -r "$O_BLOG" ]; then SK_OCWHY="the log of this build, $O_BLOG, cannot be read here"
+  else
+    # the first org_check summary line (OK, NOT CHECKED or FAILED; not the "ok ..." progress lines before it) of the check phase of this run's log ("== check" up to the next "== ")
+    SK_OCLINE=$($AWK '/^== / { ph = $2 } ph == "check" && /^org_check: (OK|NOT CHECKED|FAILED)/ { print; exit }' "$O_BLOG" | head -n 1 | st_sane_stdin)
+    [ -n "$SK_OCLINE" ] || SK_OCWHY="the check phase of the log of this build has no org_check line yet"
+  fi
+  return 0
+}
+st_sane_stdin() { tr '\t' ' ' | tr -d '\000-\010\013-\037' | head -n 1; }
 
 site_stack() { # OUT STACKDIR
   _so=$1; _sd=$2
   [ -d "$_sd" ] || die "site: no stack directory $_sd"
   mkdir -p "$TMP/sc" || die "site: no temp space"
   : > "$TMP/sc/siteflat"
-  ( cd "$_sd" && for _f in tool-*.org guesses/*/*.org corrections/*/*.org; do [ -f "$_f" ] && $AWK "$PROPS_AWK" "$_f"; done ) >> "$TMP/sc/siteflat" 2>/dev/null
+  ( cd "$_sd" && for _f in tool-*.org guesses/*/*.org corrections/*/*.org; do
+      [ -f "$_f" ] || continue
+      $AWK "$PROPS_AWK" "$_f"
+      case $_f in tool-*.org)
+        # the command that gave the version is the first "$ " line of the atom's first quoted block; the tag is the heading's own
+        $AWK -v f="$_f" 'BEGIN { OFS = "\t" } /^#\+BEGIN_EXAMPLE/ && !seen { inb = 1; next } inb && /^\$ / { c = $0; gsub(/\t/, " ", c); print f, "", "__CMD", c; seen = 1; inb = 0 } /^#\+END_EXAMPLE/ { inb = 0 }' "$_f";;
+      esac
+    done ) >> "$TMP/sc/siteflat" 2>/dev/null
   # the atoms themselves, so that every link on the page leads somewhere
   for _f in "$_sd"/story.org "$_sd"/tool-*.org "$_sd"/guesses/*/*.org "$_sd"/corrections/*/*.org "$_sd"/references/*.org; do
     [ -f "$_f" ] || continue
@@ -2922,12 +3037,11 @@ site_stack() { # OUT STACKDIR
     cp "$_f" "$_so/stack/$_rel"
   done
   {
-    html_head "The tools orgfs stands on" stack
-    $AWK -v order="$ST_TOOLS" -v version="$VERSION" "$STACK_HTML_AWK" "$TMP/sc/siteflat" < /dev/null
+    if [ "$SK_LIVE" = 1 ]; then html_head "The machine that built this page" stack; else html_head "The tools orgfs stands on" stack; fi
+    $AWK -v order="$ST_TOOLS" -v version="$VERSION" -v live="$SK_LIVE" -v asked="${O_LIVE:-0}" -v why="$SK_WHY" -v brun="$O_BRUN" -v bcommit="$O_BCOMMIT" "$STACK_HTML_AWK" "$TMP/sc/siteflat" < /dev/null
     html_foot
   } > "$_so/stack.html"
 }
-
 
 site_who() { # OUT: who.org and who.html, or a page that says there was no history to read
   _wrepo=${O_REPO:-}
@@ -3113,7 +3227,7 @@ $([ "${_allpublic:-0}" != 1 ] || printf '<li><a href="declaration.html"%s>The de
 <li><a href="who.html"$(cur who "$2")>Who worked on this</a></li>
 <li><a href="gaps.html"$(cur gaps "$2")>A view with its gaps</a></li>
 <li><a href="licensing.html"$(cur licensing "$2")>Licensing stack</a></li>
-$([ "${_stackpage:-0}" != 1 ] || printf '<li><a href="stack.html"%s>Tools it stands on</a></li>\n' "$(cur stack "$2")")
+$([ "${_stackpage:-0}" != 1 ] || printf '<li><a href="stack.html"%s>%s</a></li>\n' "$(cur stack "$2")" "$([ "${_stacklive:-0}" = 1 ] && echo 'The machine that built this' || echo 'Tools it stands on')")
 <li><a href="rights.html"$(cur rights "$2")>Your rights on this site</a></li>
 </ul>
 </nav>
@@ -3198,6 +3312,31 @@ EOF
 EOF
 }
 
+# the link from the home page to the stack page (nothing when the site has no stack page)
+site_home_stack() {
+  [ "${_stackpage:-0}" = 1 ] || return 0
+  if [ "${_stacklive:-0}" = 1 ]; then
+    printf '<p class="go"><a href="stack.html">See the machine that built this page, and how sure we are about each licence it runs under.</a></p>\n'
+  else
+    printf '<p class="go"><a href="stack.html">See the tools of an example machine, and how sure we are about each licence it runs under.</a></p>\n'
+  fi
+}
+
+# made.html: what the build itself says about Emacs and Org (nothing when the site has no stack page)
+made_live_para() {
+  [ "${_stackpage:-0}" = 1 ] || return 0
+  if [ "${_stacklive:-0}" = 1 ]; then
+    printf '<p><span class="tag">observed</span>On the build that made this page, Emacs was <code>%s</code> and Org was <code>%s</code>, as <code>orgfs stack</code> read them on the builder (<a href="stack.html#tool-emacs">the machine that built this page</a>).' "$(printf '%s' "$SK_EMACS" | esc)" "$(printf '%s' "$SK_ORG" | esc)"
+    if [ -n "$SK_OCLINE" ]; then
+      printf ' The check printed <code>%s</code> in <a href="/ci/runs/%s.log">the log of that run</a>.</p>\n' "$(printf '%s' "$SK_OCLINE" | esc)" "$O_BRUN"
+    else
+      printf ' The check&#39;s own line is not shown here (%s), so the form stays <code>org_check: OK (N assertions; Org X, Emacs Y)</code>; read it in <a href="/ci/runs/%s.log">the log of that run</a>.</p>\n' "$(printf '%s' "$SK_OCWHY" | esc)" "$O_BRUN"
+    fi
+  else
+    printf '<p><span class="tag">observed</span>This site was built without a stack read on its own builder (%s), so the Emacs and Org versions are not stated here and the check&#39;s line keeps its form, <code>org_check: OK (N assertions; Org X, Emacs Y)</code>.</p>\n' "$(printf '%s' "$SK_WHY" | esc)"
+  fi
+}
+
 # the home page: the story first; the shop's working records are on made.html
 site_home() {
   _nplural=spokes; [ "$NSP" != 1 ] || _nplural=spoke
@@ -3228,10 +3367,12 @@ EOF
 <p class="go"><a href="declaration.html">Read the declaration as a story</a></p>
 <p>The same text, as the Org file itself: <a href="declaration.org">declaration.org</a>.</p>
 EOF
+    site_home_stack
   else
     cat <<EOF
 <p>The declaration file is not published because at least one spoke in it is not public.</p>
 EOF
+    site_home_stack
   fi
   cat <<EOF
 
@@ -3340,6 +3481,12 @@ cmd_site() {
   $AWK "$REGISTER_TXT_AWK" "$SHARE/licensing.tsv" > "$_out/licensing.txt" || die "site: bad register"
   _allpublic=1
   _stackpage=0; [ -z "$O_STACK" ] || _stackpage=1
+  _stacklive=0
+  if [ "$_stackpage" = 1 ]; then
+    [ -d "$O_STACK" ] || die "site: no stack directory $O_STACK"
+    site_live "$O_STACK"; _stacklive=$SK_LIVE
+    if [ "$O_LIVE" = 1 ] && [ "$_stacklive" != 1 ]; then printf 'site: the stack page is NOT live (it will not say the machine that built the site read these tools): %s\n' "$SK_WHY" >&2; fi
+  fi
   for _s in $SPOKES; do load_spoke "$_s"; [ "$VIS" = public ] || _allpublic=0; done
   _nplural=spokes; [ "$NSP" != 1 ] || _nplural=spoke
   if [ "$_allpublic" = 1 ]; then
@@ -3362,6 +3509,7 @@ cmd_site() {
 Nothing here is a polished account written afterwards; the records are kept as the work made them, so you can check one against another.</p>
 <p>If you use Emacs, this is the part for you. orgfs&#39;s own CI has Emacs read every composed file with Org before anything is deployed, because, in Corwin Brust&#39;s words of 2026-11-07, 09:32, Emacs is &quot;a second reader over any system it runs on&quot;.
 The check is <a href="https://github.com/inputloop/orgfs/blob/main/tests/org_check.el">tests/org_check.el</a>; each run&#39;s log is public at <a href="/ci/">/ci/</a>, and the check prints a line of the form <code>org_check: OK (N assertions; Org X, Emacs Y)</code> with the versions the builder really has. This page does not state those versions: read them in the log.</p>
+$(made_live_para)
 
 <h2>What you get</h2>
 <p>You can spread a file over a group of machines and lose one without losing the
@@ -3599,7 +3747,7 @@ EOF
     html_foot
   } > "$_out/rights.html"
   site_who "$_out"
-  if [ "$_stackpage" = 1 ]; then site_stack "$_out" "$O_STACK"; printf 'site: wrote %s/stack.html and the atoms it links to, from %s\n' "$_out" "$O_STACK"; fi
+  if [ "$_stackpage" = 1 ]; then site_stack "$_out" "$O_STACK"; printf 'site: wrote %s/stack.html and the atoms it links to, from %s (%s)\n' "$_out" "$O_STACK" "$([ "$_stacklive" = 1 ] && echo "live: read on $SK_HOST during build $O_BRUN" || echo "not live: $SK_WHY")"; fi
   printf 'site: wrote %s (index.html gaps.html licensing.html rights.html who.html orgfs.css view-visitor.org)\n' "$_out"
 }
 
@@ -3712,7 +3860,7 @@ _n=$#
 while [ "$_n" -gt 0 ]; do
   _a=$1; shift; _n=$((_n - 1))
   case $_a in
-    --spoke|--as|--object|--out|--into|--root|--decl|--since|--until|--seed|--repo|--says|--by|--why|--stack)
+    --spoke|--as|--object|--out|--into|--root|--decl|--since|--until|--seed|--repo|--says|--by|--why|--stack|--build-run|--build-commit|--build-log)
       [ "$_n" -gt 0 ] || die "$_a needs a value"
       _v=$1; shift; _n=$((_n - 1))
       case $_a in
@@ -3720,9 +3868,11 @@ while [ "$_n" -gt 0 ]; do
         --into) O_INTO=$_v;; --root) O_ROOT=$_v;; --decl) O_DECL=$_v;;
         --since) O_SINCE=$_v;; --until) O_UNTIL=$_v;; --seed) O_SEED=$_v;; --repo) O_REPO=$_v;;
         --says) O_SAYS=$_v;; --by) O_BY=$_v;; --why) O_WHY=$_v;; --stack) O_STACK=$_v;;
+        --build-run) O_BRUN=$_v;; --build-commit) O_BCOMMIT=$_v;; --build-log) O_BLOG=$_v;;
       esac;;
     --no-mounts) O_NOMOUNTS=1;;
     --source) O_SOURCE=1;;
+    --live) O_LIVE=1;;
     -*) die "unknown option: $_a";;
     *) set -- "$@" "$_a";;
   esac

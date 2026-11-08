@@ -113,6 +113,16 @@ At 00:50 on 2026-11-08, on a copyright file written in free text and the answer 
 we must do better than "A human read this". [...] let's see if we can score licenses per our confidence we understanding the meaning of the words, using those we already take as "machine parable" as the frame of reference to describe how we see a given "gap" as having different ideas. We should, of course, carefully qualify (a way we can take corrections inline if people want to offer them would be nice; maybe a way to approve these) but perhaps as importantly: we must show in terms of confidence and provide access to the history (if there is any) of each of our guesses, just as we do in our local practices.
 #+END_QUOTE
 
+At 08:32 on 2026-11-08, on the example stack (short quotes):
+
+#+BEGIN_QUOTE
+orgfs showing it's own toolchain is the MVP for the site
+#+END_QUOTE
+
+#+BEGIN_QUOTE
+the wheel in operation doesn't provide a proof of concept that can capture the imagination unless the method does
+#+END_QUOTE
+
 * What was observed
 
 Each line is a command and what it printed. Nothing here is a judgement.
@@ -144,9 +154,40 @@ faults; 62.6 s on avalon) are not repeated here: they were for the old markers.
   copyright file under dash with mawk, bash with gawk, busybox sh with mawk, busybox sh with busybox awk and dash with busybox awk; all five wrote
   the same stanzas, bands and covered-word counts (the sandbox VM, 2026-11-08).
 
+- 2026-11-08, the live stack page (=Makefile= =STACK=, =orgfs site --live=, =stack.html=, =made.html=, =tests/test_live.py=). Observed in the author's
+  Linux VM (Ubuntu 24.04, Emacs 29.3, Org 9.6.15, 2 CPUs, an ordinary user; not Debian 12, not CT 102): =make check= printed
+  =check: OK (312 tests in 9 modules)= and =org_check: OK (764 assertions; Org 9.6.15, Emacs 29.3)=; =make prove-red= printed
+  =PROVE-RED OK (153 of 153 caught; control passed)= after 151 minutes. Two planted texts were changed after that run (the site that falls back to
+  the example; the org_check line taken from any phase) and each was run alone and caught by tests in =tests/test_live.py=. Seven of the
+  sixteen new faults were first reported under load as caught by =test_demo_runs_and_reports=, which the faults do not touch (a timeout under
+  load is the likely cause, not shown); each was run again alone on an idle VM and caught by the =test_live.py= test that names it.
+  The CI script as changed (=orgfs-ci.sh=, with =make prove-red= replaced by a stand-in that prints =PROVE-RED NOT RUN=, everything else real) ran three times against a local clone as
+  "origin" with a PATH that had no =/usr/sbin=: green each time; phases =check=, =prove-red=, =stack=, =site=, =deploy=; the stack phase printed
+  =9 atoms (9 SEEN_HERE, 0 CARRIED)=; the site step printed =(live: read on vm during build STAMP-HASH12)=; the deployed =stack.html= opened with the
+  claim and linked =/ci/runs/STAMP-HASH12.log=; =made.html= showed =GNU Emacs 29.3=, Org =9.6.15= and the log's =org_check: OK (745 assertions; Org 9.6.15, Emacs 29.3)=
+  (745, not 764, because that PATH hides nginx from the check's own stack); on the second run, same commit, all seven packages read =unchanged (same inputs and method=, and
+  the list of guess files was identical. The first e2e run found what the tests did not: the first =org_check:= line of a log is a
+  progress line (=org_check: ok example ...=), not the summary; the reader now takes the summary line. Caveat: =make= was a stand-in script on that PATH, so the =make= atom in that run has no package.
+
 * What was judged
 
 Each is a choice with its reason, or a concern with what would show it wrong.
+
+- *Choice: the stack page says "this machine built this page" only when four things agree at build time.* Corwin, 2026-11-08 08:32: the
+  toolchain is the MVP. The run is named =STAMP-HASH12= and begins with the commit's first 12 characters; every tool atom is tagged
+  =:SEEN_HERE:=; it was read on this host (=uname -n=); and it was read at or after the run's own stamp. Anything else and the page is
+  written as an example (or says what was off), and =orgfs site= prints why on stderr. Would be wrong if a page ever says it was built by
+  the machine described while one atom was read elsewhere, was carried, or is older than the build; =tests/test_live.py= plants each, and
+  =tests/prove_red.py= plants a site that quietly shows the example while claiming to be live.
+- *Choice: a tool that cannot be read is a gap record, and the build stays green; =orgfs stack= breaking is the only red.* Would be wrong
+  if a missing =rsync=, an unreadable copyright file or a version command that prints nothing fails a build.
+- *Choice: tool atoms are written again by every build; only the guesses (and corrections, and references) are kept.* Reason: a tool atom
+  is what was true at this build, and a guess is an append-only record by design. Would be wrong if a reader needs last month's Emacs on the
+  page: the page cannot show it, and a history of tool atoms would have to be added.
+- *Choice: "How this build used it" is stated from the Makefile and the CI script, not measured.* The page says so. Would be wrong if the
+  log of a run shows a step run by a tool the line does not name.
+- *Choice: a link to packages.debian.org is made only when the host names a Debian release,* so the example (Ubuntu) has none rather than one for the wrong release.
+  Would be wrong if a reader of the live page finds a link that does not lead to the package named.
 
 - *Choice: licence confidence is a deterministic, local floor, with every guess kept.* Corwin, 2026-11-08 00:50: "we must do better than
   'A human read this'". The measure is shingle containment (below), POSIX awk, no model call and no network call, so that a later reader, a
@@ -592,8 +633,9 @@ On this site the same command, run over this repository's own history, is the pa
 
 * The tools we stand on
 
-=orgfs stack DIR= writes one atom per tool (=DIR/tool-NAME.org=): sh (which one), awk (which one), git, python3, emacs, org
-and nginx if present. Each atom quotes the version command and its output exactly, and on Debian the package name and
+=orgfs stack DIR= writes one atom per tool (=DIR/tool-NAME.org=): sh (which one), awk (which one), make, git, python3, emacs, org,
+rsync and nginx if present (the tools a build of this site uses: the shell and make run it, git fetches it, python3 and emacs test it,
+rsync copies it, nginx serves it). Each atom quotes the version command and its output exactly, and on Debian the package name and
 version from =dpkg-query=, the source package, the upstream version derived from the package version (the version minus
 its epoch and its last hyphen part), the licence short names as the package's =copyright= file states them (quoted, not
 judged), and where and when it was read. What could not be read is a gap record in the gap form above. "Commits that make
@@ -604,6 +646,19 @@ Vcs-Git field and tag are recorded only if the package gives them; otherwise a g
 Each atom is tagged =:SEEN_HERE:= (read in this run) or =:CARRIED:= (taken from the seed because the cheap re-read gave the
 same output; the atom is the seed's, byte for byte, with =:CARRIED_FROM:=, =:CARRIED_AT:= and the re-read stamped on). A
 carried atom is never shown as seen. A tool whose version changed, or that is absent, is read or reported again.
+
+*Live, at build time (2026-11-08).* =make site= publishes =examples/stack.d= (read on another machine). =make site STACK=DIR BUILD_RUN=STAMP-HASH12
+BUILD_COMMIT=SHA BUILD_LOG=FILE= is =orgfs site ... --stack DIR --live --build-run ... --build-commit ... --build-log ...=: the stack page is built
+from DIR and opens "This page was built and tested by the machine described below; it read its own tools while building it", linking
+=/ci/runs/STAMP-HASH12.log= and the commit, but only if the atoms in DIR were read on this host, tagged =:SEEN_HERE:=, at or after the run's
+stamp, and the run and commit agree; otherwise it is written as an example and says why (stderr too), and the build is still green. For each tool the
+page shows the version as it reported itself with the command, the Debian package and upstream version (links to
+=packages.debian.org/RELEASE/PKG= and =tracker.debian.org/pkg/SOURCE= when the host names a Debian release; links only, nothing is fetched), the
+licences with confidence in number and words, the history of guesses, the corrections and how to offer one, and the gaps (including "which
+commits make this version distinct: not read yet (needs the upstream tree)"). =made.html= then states the builder's real Emacs and Org versions
+and the =org_check= line of the check phase of that run's log (read from =--build-log=; without it the pattern stays, with the reason). The CI
+script keeps DIR (=/c4/ci/orgfs/stack=) between builds: =orgfs stack DIR= rewrites the tool atoms, appends a guess only when its inputs changed,
+and never touches =corrections/=. The steps to install this on the builder, each with its undo, are in =DEPLOY-stack.md= (kept with the CI scripts, in =orgfs-ops/ci=).
 
 Licensing spoke: the stack atoms are a separate record, not members of the licensing spoke, because a spoke member needs a
 declaration and could change the 0.4 file identity. Each atom points at the licensing register (=share/licensing.tsv=) by a
@@ -697,6 +752,7 @@ git (DEP-5; 38 standard-name paragraphs, not scored; 5 scored):
 | =orgfs stack correct PACKAGE --says L --by N --why W [--stack DIR]= | propose a correction to the licence guess (STATE proposed) |
 | =orgfs stack approve CORRECTION --by N [--stack DIR]=  | approve it; its proposer may not; it outranks the guess, which stays |
 | =orgfs site DECL OUT --stack DIR=                      | as =site=, plus =stack.html= from a stack directory |
+| =orgfs site DECL OUT --stack DIR --live --build-run STAMP-HASH12 --build-commit SHA [--build-log FILE]= | as above; the page says the build machine read the stack only if the atoms were read here, during this build |
 | =orgfs demo [DIR]=                                     | three spokes over local directories, end to end           |
 
 DECL is, everywhere, an atom directory or a composed, source or plain file.
@@ -772,6 +828,8 @@ container builds itself. A builder there fetches main; if main has moved it runs
 =make prove-red= and =make site=, and deploys =_site/= only when all three pass. It looks every
 4 minutes, and a push webhook to =https://orgfs.com/hook= asks it to look at once.
 
+(2026-11-08: a =stack= phase now runs between =make prove-red= and =make site=; see =DEPLOY-stack.md= in =orgfs-ops/ci=.)
+
 Judged: the webhook is a nudge, not an instruction. Nothing in the request is read or trusted
 and it carries no secret; what is built is only what =git fetch= returns from the public repo,
 so a forged poke can at most cause an extra look. Would be wrong if: a poke could choose what is
@@ -779,6 +837,14 @@ built, or a run could deploy without all three steps green.
 
 * NOT CHECKED
 
+- The live stack page (2026-11-08): anything on CT 102. Nothing was run there; the CI script and =DEPLOY-stack.md= were exercised only in the author's
+  Linux VM (Ubuntu 24.04, Emacs 29.3 with Org 9.6.15; not Debian 12, Emacs 28.2, Org 9.5.5), against a local clone as "origin" and a stand-in for =rsync=
+  where it was missing. That =runner= can write =/c4/ci/orgfs/stack=; that nginx is found by the PATH the script builds; that =dpkg-query -S= names
+  the package that holds the Org library there; that the Debian links lead to pages (never fetched); that the run link =/ci/runs/STAMP-HASH12.log=
+  resolves on orgfs.com. Which commits make each version distinct (needs the upstream tree). A browser rendering of the new page. That a
+  newcomer finds "the machine that built this page" more convincing than the example (nobody but its author has read it). The Makefile's =STACK=
+  branch is tested by =make -n= and by running the same command line, not by a planted fault in the Makefile. That the tool atoms of last
+  week's builds are not kept.
 - Licence confidence (2026-11-08): that any band means what its word says to a person (4, 9 and 17 are invented; no band was compared with a
   lawyer's reading). That =share/dep5-names.txt= is the DEP-5 list of standard names: written from memory, no specification on the host, no
   network call. Standard-named DEP-5 paragraphs are not scored, so a paragraph that says "Expat" over another text is not caught. Pointer

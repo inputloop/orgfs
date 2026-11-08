@@ -73,6 +73,9 @@ class Stubs:
         open(self.log, "w").close()
         self.versions = versions
         self.write("git", 'echo "git version %s"' % versions["git"])
+        self.write("make", 'echo "GNU Make %s"; echo "Built for stub"' % versions["make"])
+        # rsync is a tripwire (it can reach out), but its version flag reaches nothing and is what the stack reads
+        self.write("rsync", 'case "$1" in --version) echo "rsync  version %s  protocol version 31";; *) echo "rsync $*" >> %s; exit 1;; esac' % (versions["rsync"], self.log))
         self.write("python3", 'echo "Python %s"' % versions["python3"])
         self.write("emacs", 'case "$*" in *--eval*) printf "%s\\n/stub/lisp/org.elc\\n";; *) echo "GNU Emacs %s"; echo "Copyright line";; esac' % (versions["org"], versions["emacs"]))
         if nginx:
@@ -91,7 +94,7 @@ esac''' % (self.log, os.path.join(os.path.dirname(self.bin), "table")))
             os.makedirs(os.path.join(self.doc, pkg), exist_ok=True)
             with open(os.path.join(self.doc, pkg, "copyright"), "w") as f:
                 f.write(lic)
-        for n in ("curl", "wget", "ssh", "nc", "ncat", "ftp", "apt-get", "apt", "apt-cache", "pip", "pip3", "rsync", "ollama", "llama-cli", "llm"):
+        for n in ("curl", "wget", "ssh", "nc", "ncat", "ftp", "apt-get", "apt", "apt-cache", "pip", "pip3", "ollama", "llama-cli", "llm"):
             self.write(n, 'echo "%s $*" >> %s; exit 1' % (n, self.log))
 
     def write(self, name, body):
@@ -114,6 +117,8 @@ def PACKAGES(v):
     # package -> (version, source field)
     return {
         "git": (v.get("git_pkgver", "1:%s-1stub1" % v["git"]), ""),
+        "make": ("%s-1" % v["make"], "make-dfsg (%s-1)" % v["make"]),
+        "rsync": ("%s-1" % v["rsync"], ""),
         "python3": ("%s-1" % v["python3"], "python3-defaults (%s-1)" % v["python3"]),
         "emacs": ("1:%s+1-3" % v["emacs"], "emacs (1:%s+1-3)" % v["emacs"]),
         "emacs-common": ("1:%s+1-3" % v["emacs"], "emacs"),
@@ -125,8 +130,10 @@ def PACKAGES(v):
     }
 
 
-V1 = {"git": "9.9.9.stub", "python3": "3.99.1", "emacs": "99.1", "org": "9.99", "nginx": "1.99.0"}
+V1 = {"git": "9.9.9.stub", "python3": "3.99.1", "emacs": "99.1", "org": "9.99", "nginx": "1.99.0", "make": "9.8", "rsync": "9.7.1"}
 LIC1 = {
+    "make": "License: GPL-3+\n",
+    "rsync": "License: GPL-3+\n",
     "git": "Format: x\n\nFiles: *\nLicense: GPL-2\n\nFiles: a\nLicense: GPL-2\n\nFiles: b\nLicense: LGPL-2.1+\n text of it\n",
     "python3": "License: PSF-2\n",
     "emacs": "License: GPL-3+\n",
@@ -157,7 +164,7 @@ class StackBase(unittest.TestCase):
 
 class StackTests(StackBase):
     def test_one_atom_per_tool_each_read_here(self):
-        self.assertEqual(sorted(self.a1), ["awk", "emacs", "git", "nginx", "org", "python3", "sh"])
+        self.assertEqual(sorted(self.a1), ["awk", "emacs", "git", "make", "nginx", "org", "python3", "rsync", "sh"])
         for t, text in self.a1.items():
             name, tags = head(text)
             self.assertEqual((name, tags), (t, ["SEEN_HERE"]), t)
@@ -168,7 +175,7 @@ class StackTests(StackBase):
             self.assertEqual(p["READ_ON"], subprocess.run(["uname", "-n"], capture_output=True, text=True).stdout.strip())
             self.assertNotIn("CARRIED_FROM", p)
         self.assertIn("There was no seed", read(os.path.join(self.d1, "story.org")))
-        self.assertRegex(self.out1, r"stack: wrote .*: 7 atoms \(7 SEEN_HERE, 0 CARRIED\), \d+ gap records")
+        self.assertRegex(self.out1, r"stack: wrote .*: 9 atoms \(9 SEEN_HERE, 0 CARRIED\), \d+ gap records")
 
     def test_the_version_is_what_the_tool_printed_and_the_command_is_quoted(self):
         p = props(self.a1["git"])
@@ -287,7 +294,7 @@ class StackTests(StackBase):
         with open(T.BIN) as f:
             src = f.read()
         region = src[src.index("# ------------------------------------------------------------------ stack"):src.index("WHO_HTML_AWK=")]
-        code = "\n".join(l for l in region.split("\n") if not l.lstrip().startswith("#"))
+        code = "\n".join(l for l in region.split("\n") if not l.lstrip().startswith("#") and not l.startswith("ST_TOOLS="))
         bad = re.search(r"\b(curl|wget|ssh|rsync|ftp|nc|ncat|ollama|llama|openai|anthropic)\b\s|https?://|\bgit (fetch|pull|clone)\b|apt-get (update|install|source)\b[^\"]*>", code)
         self.assertIsNone(bad, bad and bad.group(0))
 
@@ -362,7 +369,7 @@ class SeedTests(StackBase):
         self.assertEqual(p["VERSION"], "nginx version: nginx/1.99.0")      # the seed's, still labelled as carried
 
     def test_the_summary_and_the_story_say_what_came_from_where(self):
-        self.assertRegex(self.out2, r"stack: wrote .*: 7 atoms \((\d) SEEN_HERE, (\d) CARRIED\)")
+        self.assertRegex(self.out2, r"stack: wrote .*: 9 atoms \((\d) SEEN_HERE, (\d) CARRIED\)")
         m = re.search(r"\((\d) SEEN_HERE, (\d) CARRIED\)", self.out2)
         n_seen = sum(1 for t in self.a2.values() if head(t)[1] == ["SEEN_HERE"])
         n_car = sum(1 for t in self.a2.values() if head(t)[1] == ["CARRIED"])
