@@ -110,7 +110,13 @@ esac''' % (self.log, os.path.join(os.path.dirname(self.bin), "table")))
             rest = [d for d in rest if not os.access(os.path.join(d, "nginx"), os.X_OK)]
         cl = os.path.join(os.path.dirname(self.bin), "common-licenses")      # none: the reference texts of the host are not these tests' business
         os.makedirs(cl, exist_ok=True)
-        return {"PATH": os.pathsep.join([self.bin] + rest), "ORGFS_DOC": self.doc, "ORGFS_COMMON_LICENSES": cl}
+        # the stub host names no Debian release, whatever machine runs the tests (found 2026-11-08: the Debian builder
+        # leaked its own os-release into the stub atoms and test_live expected none)
+        osr = os.path.join(os.path.dirname(self.bin), "os-release")
+        with open(osr, "w") as f:
+            f.write('PRETTY_NAME="Stubix 1 (a stub host for tests)"\nID=stubix\n')
+        return {"PATH": os.pathsep.join([self.bin] + rest), "ORGFS_DOC": self.doc, "ORGFS_COMMON_LICENSES": cl,
+                "ORGFS_OS_RELEASE": osr}
 
 
 def PACKAGES(v):
@@ -163,6 +169,14 @@ class StackBase(unittest.TestCase):
 
 
 class StackTests(StackBase):
+    def test_the_host_description_is_the_stubs_not_the_machine_running_the_tests(self):
+        # 2026-11-08: on the Debian builder the stub atoms carried the builder's own os-release, and a test that
+        # expected "no Debian release" went red there and nowhere else.  The stubs pin it; this proves orgfs honours it.
+        for t, text in self.a1.items():
+            env = [l for l in text.splitlines() if l.startswith(":READ_ENV:")][0]
+            self.assertIn("Stubix 1 (a stub host for tests)", env, t)
+            self.assertNotIn("Debian GNU/Linux", env, t)
+
     def test_one_atom_per_tool_each_read_here(self):
         self.assertEqual(sorted(self.a1), ["awk", "emacs", "git", "make", "nginx", "org", "python3", "rsync", "sh"])
         for t, text in self.a1.items():

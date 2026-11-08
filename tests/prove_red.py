@@ -358,6 +358,8 @@ FAULTS = [
      'ST_TOOLS="sh awk make git python3 emacs org rsync nginx"', 'ST_TOOLS="sh awk git python3 emacs org nginx"'),
     ("a licence guess section is written one level too deep (Org reads it as a child of nothing)",
      'printf "** licence guess\\n:PROPERTIES:\\n:ROLE: licence-guess', 'printf "*** licence guess\\n:PROPERTIES:\\n:ROLE: licence-guess', "emacs"),
+    ("the stack ignores ORGFS_OS_RELEASE and describes the machine running it",
+     '_osr=${ORGFS_OS_RELEASE:-/etc/os-release}', '_osr=/etc/os-release'),
 ]
 
 

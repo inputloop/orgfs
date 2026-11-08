@@ -1995,7 +1995,8 @@ cmd_stack() {
   ST_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   ST_HOST=$(st_sane "$(uname -n 2>/dev/null)")
   ST_ENV=$(st_sane "$(uname -sr 2>/dev/null)")
-  if [ -r /etc/os-release ]; then _pn=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | head -n 1 | tr -d '"'); [ -z "$_pn" ] || ST_ENV="$ST_ENV; $_pn"; fi
+  _osr=${ORGFS_OS_RELEASE:-/etc/os-release}   # overridable so tests describe a host of their own, not the machine running them
+  if [ -r "$_osr" ]; then _pn=$(sed -n 's/^PRETTY_NAME=//p' "$_osr" | head -n 1 | tr -d '"'); [ -z "$_pn" ] || ST_ENV="$ST_ENV; $_pn"; fi
   ST_SEEDNAME=
   mkdir -p "$TMP/seed" || die "stack: no temp space"
   if [ -n "$O_SEED" ]; then
