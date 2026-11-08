@@ -1,0 +1,13 @@
+* reference Apache-2.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: Apache-2.0-cfc7749b.org
+:NAME: Apache-2.0
+:PATH: /usr/share/common-licenses/Apache-2.0
+:SHA256: cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 1607
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference Apache-2.0, read on vm, is the text at /usr/share/common-licenses/Apache-2.0; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

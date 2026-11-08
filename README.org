@@ -10,7 +10,8 @@ Code: GPL-3.0-or-later (see =COPYING=). Prose, including this file: CC-BY-SA-4.0
 *Status:* orgfs 0.5.0-dev, 2026-11-07, before 1.0. Tested on Linux only; Windows, macOS and the BSDs are not yet tested.
 The counts for this build are in [[*What was observed][What was observed]] and were taken on 2026-11-07 with =make check=
 and =make prove-red=; the Emacs check ran here on Emacs 27.1 with Org 9.3 (the oldest Org it accepts), and has not yet run on
-the Org 9.5.5 that CI has. Nothing has run on a ghostwheel host yet. 0.5.0-dev adds =orgfs who= and =orgfs stack=. See
+the Org 9.5.5 that CI has. Nothing has run on a ghostwheel host yet. 0.5.0-dev adds =orgfs who= and =orgfs stack=, and (2026-11-08)
+licence confidence in =orgfs stack= (see [[*Licence confidence][Licence confidence]]). See
 [[*NOT CHECKED][NOT CHECKED]] for what was not.
 
 The site's home page was reworked on 2026-11-07 at Corwin's 09:21 word, so that it tells the example as a story and the working
@@ -106,6 +107,12 @@ At 08:11 on 2026-11-07, as the coordinator passed it on (not his words): Emacs i
 once orgfs uses Org in a new way; in CI the Org check is required; where emacs is absent locally it
 stays NOT CHECKED, never a pass.
 
+At 00:50 on 2026-11-08, on a copyright file written in free text and the answer "a human read this":
+
+#+BEGIN_QUOTE
+we must do better than "A human read this". [...] let's see if we can score licenses per our confidence we understanding the meaning of the words, using those we already take as "machine parable" as the frame of reference to describe how we see a given "gap" as having different ideas. We should, of course, carefully qualify (a way we can take corrections inline if people want to offer them would be nice; maybe a way to approve these) but perhaps as importantly: we must show in terms of confidence and provide access to the history (if there is any) of each of our guesses, just as we do in our local practices.
+#+END_QUOTE
+
 * What was observed
 
 Each line is a command and what it printed. Nothing here is a judgement.
@@ -130,9 +137,34 @@ faults; 62.6 s on avalon) are not repeated here: they were for the old markers.
   =tests/org_check.el= with Org; =tests/test_stack.py= compares each atom with =dpkg-query= and the copyright file read
   independently.
 
+- 2026-11-08, licence confidence (=orgfs stack=, =orgfs stack correct=, =orgfs stack approve=, =stack.html=): the commands and what they
+  printed are in [[*Licence confidence][Licence confidence]], "What was observed" there. =tests/test_licence.py= works the measure out again in
+  Python (words, shingles, containment, the longest shared run by a plain dynamic programme, the greedy components) and compares;
+  =tests/org_check.el= asks Org to read the guess atoms and resolve every =PREVIOUS= and =NEXT= link both ways. The scorer was also run on one
+  copyright file under dash with mawk, bash with gawk, busybox sh with mawk, busybox sh with busybox awk and dash with busybox awk; all five wrote
+  the same stanzas, bands and covered-word counts (the sandbox VM, 2026-11-08).
+
 * What was judged
 
 Each is a choice with its reason, or a concern with what would show it wrong.
+
+- *Choice: licence confidence is a deterministic, local floor, with every guess kept.* Corwin, 2026-11-08 00:50: "we must do better than
+  'A human read this'". The measure is shingle containment (below), POSIX awk, no model call and no network call, so that a later reader, a
+  local model included, can propose beside it and be compared with it; it replaces nothing. Would be wrong if two readers who agree on what a
+  stanza means get bands more than one step apart, or one who reads a different meaning gets "high". The corrections are where that would
+  show; each is kept beside the guess it was made against.
+- *Choice: the bands are 4, 9 and 17 per cent of a stanza's words outside the match.* House numbers, invented, not measured. Would be wrong if
+  a stanza a person reads as plainly the same licence lands in "a gap", or one read as plainly different lands in "high". Nothing here has
+  compared a band with a lawyer's reading.
+- *Choice: a stanza is a unit, never merged into the file.* A dual-licensed file, or a Debian file with a stanza per directory, gets one
+  result per stanza. Would be wrong if a stanza says "GPL-2+ or Artistic" and only one is shown; the components (up to four references,
+  each after the first adding at least 12 words) are there for that, and a planted fault covers it.
+- *Concern: the best match among equals is the first by name.* GPL-1, GPL-2 and GPL-3 share their notice, so words alone cannot tell the
+  version. Would be wrong if a tie were shown as a choice made: the tie count is in the component line and the summary.
+- *Concern: copyright-holder lines are set aside before scoring* (lines beginning "Copyright" or "(C)"), since names and years say nothing
+  about the licence. Would be wrong if a licence hides in such a line; the number set aside is in the guess.
+- *Concern: a name typed in =--by= is not authenticated,* so "the proposer cannot approve" is a rule about names. Would be wrong (a
+  non-issue) if everyone who can run =orgfs stack= is already trusted to be any of them.
 
 - *Choice: atoms are what is stored; the one file is composed from them, never edited as the
   source.* Corwin, 20:51: "YES AND", "RECOMPOSE the single file", "I prefer atomic storage".
@@ -577,6 +609,70 @@ Licensing spoke: the stack atoms are a separate record, not members of the licen
 declaration and could change the 0.4 file identity. Each atom points at the licensing register (=share/licensing.tsv=) by a
 =:REGISTER_ROW:= property where the register has a row for the tool. No new register was invented.
 
+* Licence confidence
+
+=orgfs stack= also says how much of the wording of a package's copyright file stands in a licence text the host already holds in a
+machine-readable form. His 2026-11-08 00:50 aim: score licences "per our confidence", "using those we already take as machine
+parable as the frame of reference", take corrections "inline", "maybe a way to approve these", and "provide access to the history of each
+of our guesses".
+
+*The frame of reference.* =/usr/share/common-licenses/*= (each by file name; a symlink such as =GPL= is an alias of its target, not another
+reference), and the =License:= paragraphs of DEP-5 copyright files on the host that carry a standard short name (=share/dep5-names.txt=)
+and a text of their own (20 words or more, not a pointer into =/usr/share/common-licenses=). For each name the text held by the most
+packages is the reference; a text held only by the package being scored is left out for that package. Each reference is an atom,
+=DIR/references/NAME-SHA8.org=, with its name, path, SHA-256, where the name came from and its word count; one that exists is never rewritten.
+=ORGFS_COMMON_LICENSES= and =ORGFS_DOC= move the two roots (the tests use them).
+
+*What is scored.* A DEP-5 file (a =Format:= line in its first five lines): each =License:= paragraph whose name is not standard, and has a
+text. A paragraph with a standard name is taken as stated, counted and not scored; a non-standard name with no text is a gap of kind
+=name-without-text=. A free-text file: each block between blank lines. A block of 12 words or more is a stanza; a shorter one only with
+licence words and at least three words. A scored block with no licence words that lands in a gap is "prose set aside", counted. Lines
+beginning "Copyright" or "(C)" are set aside first and counted.
+
+*The measure* (=shingle4-containment=, version 1). Lower-case the text, delete apostrophes, and let everything that is not =a-z0-9= separate
+words. A shingle is 4 words in a row. A word of the stanza is covered by a reference if it lies in a shingle the reference also holds.
+Score = covered words / the stanza's words. Components: the reference covering most words, then up to three more, each adding at least 12
+words not yet covered; ties are reported. The longest shared run is found exactly (consecutive in both texts), not from shingles.
+Containment, not similarity, because a stanza is usually a short notice that stands inside a long licence. Shingles of 4, because one or two
+shared words are chance. It is POSIX awk and sh, as the rest of orgfs is.
+
+*Bands* (house numbers, invented, not measured): at most 4 per cent of the words outside the match is /high/; at most 9 /moderate/; at most 17
+/low/. Beyond that it stays a gap and says what kind: =partial-text=, =no-reference= (no run of four words in common with any reference),
+=points-at-reference= (it cites a common-licenses file by path instead of carrying the text), =too-short=, =name-without-text=. The comparison
+is in whole numbers, so 4 of 100 is high and 5 of 100 is moderate. The words that match no reference are listed with their positions: those
+are the "different ideas" in the gap.
+
+*A guess* is an append-only atom, =DIR/guesses/PACKAGE/STAMP-METHOD.org=, with the method and version, the file read and its SHA-256, the
+SHA-256 of the reference set, one section per stanza, and =PREVIOUS:= (a link, or none). A re-run with the same inputs (file bytes,
+reference set, method, version, bands) writes nothing and says so. A changed input appends a guess and writes =NEXT:= on the old one; that
+line is the only change ever made to an old guess. Two newest guesses are refused as "forked". =guesses/=, =references/= and =corrections/=
+sit beside the atoms of the stack and are not composed, so those three names cannot be spokes. Each tool atom has a child heading
+=licence guess= showing the guess in effect and linking its history.
+
+*A correction.* =orgfs stack correct PACKAGE --says "LICENCE" --by NAME --why "REASON" [--stack DIR]= writes
+=DIR/corrections/PACKAGE/STAMP-NAME.org= with =STATE: proposed=. =orgfs stack approve CORRECTION --by NAME [--stack DIR]= sets
+=STATE: approved= with who and when; the proposer cannot approve their own (names compared without case or spacing). An approved correction
+outranks the guess in the tool atom and on =stack.html=; the guess stays, with its confidence. Several approved: the latest approval wins.
+
+*On the site.* =orgfs site DECL OUT --stack DIR= adds =stack.html= and copies the atoms it links to under =stack/=: for each tool, the licence in
+effect, the guess with its confidence in a number and in words, the method, the stanzas, the history, the corrections, and plain
+instructions for offering one (there is no form; the site is static). =make site= publishes =examples/stack.d=, read on the sandbox VM
+named in its atoms, not on a ghostwheel host.
+
+*What was observed* (the sandbox VM, Ubuntu with dpkg, 2026-11-08; =sh bin/orgfs stack DIR=; for the free-text example =sh= was put first on
+=PATH= as busybox). Figures are the guess atoms'.
+
+#+BEGIN_EXAMPLE
+busybox (free text, no License: line):
+  notice stanza:    LGPL-2 85.2%, low
+  notice stanza:    GPL-1, tied with 12 others that add as many, 94.7%, moderate
+  notice stanza:    GPL-1, tied with 1 other, 97.1%, high
+  pointer stanza:   33.3%, a gap (points-at-reference)
+git (DEP-5; 38 standard-name paragraphs, not scored; 5 scored):
+  EDL-1.0:  BSD 96.6%, high
+  the others: gaps (55.4%, 27.5%, 54.0%, 66.5%)
+#+END_EXAMPLE
+
 * Commands
 
 | Command                                                | Does                                                      |
@@ -598,6 +694,9 @@ declaration and could change the 0.4 file identity. Each atom points at the lice
 | =orgfs site DECL OUT=                                  | static HTML site: no script, no inline style, one CSS file |
 | =orgfs who REPO [PATH...] [--since DATE] [--until DATE] [--out FILE]= | read =git log= and write an Org document: who touched what, when, every commit, person and path linked both ways |
 | =orgfs stack DIR [--seed FILE]=                        | one atom per tool this build stands on (version, package, licence as quoted, where and when read) |
+| =orgfs stack correct PACKAGE --says L --by N --why W [--stack DIR]= | propose a correction to the licence guess (STATE proposed) |
+| =orgfs stack approve CORRECTION --by N [--stack DIR]=  | approve it; its proposer may not; it outranks the guess, which stays |
+| =orgfs site DECL OUT --stack DIR=                      | as =site=, plus =stack.html= from a stack directory |
 | =orgfs demo [DIR]=                                     | three spokes over local directories, end to end           |
 
 DECL is, everywhere, an atom directory or a composed, source or plain file.
@@ -654,7 +753,7 @@ computes the rendezvous plan again, independently, so the tool's hashing is chec
 second implementation. =test_views.py= works out which gap records each host must be shown and
 which strings it must never see, from the rules above, and runs every route in a gap to check
 it fills that gap. =test_layout.py= builds a fake tree. =test_style.py= computes the contrast
-ratios from the CSS. =test_who.py= builds a fixture repository (two spellings of one name, an empty commit, a merge, odd paths, a hostile subject) and checks the triangle of links with an independent reader; =test_stack.py= uses stub tools and a stub =dpkg-query= and requires every carried atom to be tagged =:CARRIED:=. =org_check.el= also asks Org to resolve every link in =orgfs who= output and checks the tags in a seeded stack.
+ratios from the CSS. =test_who.py= builds a fixture repository (two spellings of one name, an empty commit, a merge, odd paths, a hostile subject) and checks the triangle of links with an independent reader; =test_stack.py= uses stub tools and a stub =dpkg-query= and requires every carried atom to be tagged =:CARRIED:=. =org_check.el= also asks Org to resolve every link in =orgfs who= output and checks the tags in a seeded stack, and reads the licence guesses: every =PREVIOUS= and =NEXT= link resolved both ways, the reference hashes, a correction proposed then approved with self-approval refused, and the composed stack still plain Org. =test_licence.py= works the licence measure out again in Python and compares: covered words, the longest run, the components, the band edges (0, 4, 5, 9, 10, 17, 18 words in 100), a re-run that writes nothing, a changed input that appends and links both ways, the site page, and a scan for outside calls.
 
 =tests/prove_red.py= (=make prove-red=) plants faults in a copy of the tool and requires each to
 turn a test red; it ends =PROVE-RED OK (N of N caught; control passed)=. Two of the faults
@@ -680,6 +779,14 @@ built, or a run could deploy without all three steps green.
 
 * NOT CHECKED
 
+- Licence confidence (2026-11-08): that any band means what its word says to a person (4, 9 and 17 are invented; no band was compared with a
+  lawyer's reading). That =share/dep5-names.txt= is the DEP-5 list of standard names: written from memory, no specification on the host, no
+  network call. Standard-named DEP-5 paragraphs are not scored, so a paragraph that says "Expat" over another text is not caught. Pointer
+  stanzas are not text-compared. Ties among references are broken by name order only. Non-English text, non-ASCII letters (they separate
+  words), hyphenation across lines. Any host but Debian or Ubuntu; the device (Windows) host; a ghostwheel host. Org 9.5.5 for the new
+  =org_check= case (only 9.6.15 ran). A browser rendering of =stack.html=. That a person can follow its instructions for offering a correction.
+  That a name in =--by= is the person it names. A directory literally named =correct= or =approve= collides with the subcommands, and
+  =guesses=, =references= and =corrections= are reserved. A carried atom keeps the seed's licence section.
 - 0.5.0-dev: Org 9.5.5 (only Org 9.3 on Emacs 27.1 ran); a browser rendering of =who.html=; a path containing a newline
   (a tab is refused); a heading name ending in =:tag:=; a non-Debian host for =orgfs stack= (only its gap paths were tried);
   busybox's own awk; a stack seed from another host; repositories of more than a few hundred commits (300 were tried);

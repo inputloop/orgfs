@@ -1,0 +1,13 @@
+* reference LGPL-2 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: LGPL-2-6a7f53c1.org
+:NAME: LGPL-2
+:PATH: /usr/share/doc/e2fsprogs/copyright
+:SHA256: 6a7f53c1c7be7cee6ffba328de32feeedb949dcd918e5de6e21ea6f3e77dc5a3
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/e2fsprogs/copyright (held by 5 packages)
+:WORDS: 99
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference LGPL-2, read on vm, is the text at /usr/share/doc/e2fsprogs/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/e2fsprogs/copyright (held by 5 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

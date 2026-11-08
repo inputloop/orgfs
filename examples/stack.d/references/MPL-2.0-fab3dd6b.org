@@ -1,0 +1,13 @@
+* reference MPL-2.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: MPL-2.0-fab3dd6b.org
+:NAME: MPL-2.0
+:PATH: /usr/share/common-licenses/MPL-2.0
+:SHA256: fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 2422
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference MPL-2.0, read on vm, is the text at /usr/share/common-licenses/MPL-2.0; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

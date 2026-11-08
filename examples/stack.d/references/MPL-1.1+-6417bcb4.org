@@ -1,0 +1,14 @@
+* reference MPL-1.1+ :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: MPL-1.1+-6417bcb4.org
+:NAME: MPL-1.1+
+:PATH: /usr/share/doc/libhyphen0/copyright
+:SHA256: 6417bcb4552da203fb374c034ea17729f4ce7b90b5fe8152574cfd953d0b4383
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/libhyphen0/copyright (held by 1 packages)
+:WORDS: 3784
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:ONLY_PACKAGE: libhyphen0
+:END:
+Observed: the reference MPL-1.1+, read on vm, is the text at /usr/share/doc/libhyphen0/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/libhyphen0/copyright (held by 1 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

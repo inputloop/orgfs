@@ -1,0 +1,95 @@
+* awk :SEEN_HERE:
+:PROPERTIES:
+:ORGFS_ATOM: tool-awk.org
+:ROLE: stack-tool
+:TOOL: awk
+:READ_AT: 2026-11-08T07:20:49Z
+:READ_ON: vm
+:READ_ENV: Linux 6.18.44-fc-v310; Ubuntu 24.04.5 LTS
+:PRESENT: yes
+:COMMAND_PATH: /usr/bin/awk
+:RESOLVED_PATH: /usr/bin/gawk
+:VERSION: GNU Awk 5.2.1, API 3.2, PMA Avon 8-g1, (GNU MPFR 4.2.1, GNU MP 6.3.0)
+:VERSION_TEXT_SHA256: b6398bf0c61c515070bca8c44d227bac8d2c348bc1e2e74ad12f5d3ebcf0d900
+:PACKAGE: gawk
+:PACKAGE_VERSION: 1:5.2.1-2ubuntu0.1
+:SOURCE_PACKAGE: gawk
+:UPSTREAM_VERSION: 5.2.1
+:HOMEPAGE: http://www.gnu.org/software/gawk/
+:COPYRIGHT_PATH: /usr/share/doc/gawk/copyright
+:LICENSES: GPL-3+
+:REGISTER_ROW: gawk (line 4 of share/licensing.tsv)
+:END:
+Observed on vm at 2026-11-08T07:20:49Z: awk is at /usr/bin/awk, which resolves to /usr/bin/gawk. The commands below were run and printed what is quoted.
+
+#+BEGIN_EXAMPLE
+$ /usr/bin/gawk --version
+GNU Awk 5.2.1, API 3.2, PMA Avon 8-g1, (GNU MPFR 4.2.1, GNU MP 6.3.0)
+Copyright (C) 1989, 1991-2022 Free Software Foundation.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+[10 more lines not quoted]
+#+END_EXAMPLE
+
+Observed: Debian names the owner of that file as package gawk, version 1:5.2.1-2ubuntu0.1, built from source package gawk; the upstream version derived from it (epoch and the last hyphen-part dropped) is 5.2.1.
+
+#+BEGIN_EXAMPLE
+$ dpkg-query -S /usr/bin/gawk
+gawk: /usr/bin/gawk
+$ dpkg-query -W -f '${Package}|${Version}|${Source}|${Architecture}|${Homepage}\n' gawk
+gawk|1:5.2.1-2ubuntu0.1||amd64|http://www.gnu.org/software/gawk/
+#+END_EXAMPLE
+
+Observed: the distinct License: lines of /usr/share/doc/gawk/copyright, in file order, are quoted here. They are what the file says; this tool does not say whether they are right or how they combine.
+
+#+BEGIN_EXAMPLE
+License: GPL-3+
+#+END_EXAMPLE
+
+Observed: share/licensing.tsv, the register the licensing page is made from, has a row for gawk (line 4) that reads: GPL-3.0-or-later. It is a different source from the copyright file above, and this tool does not say whether the two agree.
+
+Judged: nothing here. The facts above are copied from the commands and files named, and the gaps say what was not read.
+
+** licence guess
+:PROPERTIES:
+:ROLE: licence-guess
+:PACKAGE: gawk
+:IN_EFFECT: machine guess
+:GUESS_CURRENT: guesses/gawk/20261108T072049Z-shingle4-containment-v1.org
+:GUESS_HISTORY: guesses/gawk/ (1 guess)
+:CORRECTIONS_APPROVED: 0
+:CORRECTIONS_PROPOSED: 0
+:END:
+Observed: the machine guess is guesses/gawk/20261108T072049Z-shingle4-containment-v1.org, made 2026-11-08T07:20:49Z by shingle4-containment version 1 from /usr/share/doc/gawk/copyright (sha256 4d8bd683c14ce5e3f68094a56892ecd336524e9977b6cfd3eb22ef835d67f367): nothing to score.
+Observed: 3 paragraphs carry only standard short names (GPL-3+), taken as stated and not scored.
+Judged: the band edges are 4 9 17 (house numbers, invented), not measured; method shingle4-containment version 1. The guess atom lists, for each stanza, the words that matched no reference.
+Observed: this is the only guess so far for this package; a later one will be linked to it by PREVIOUS and NEXT.
+To offer a correction: tell the project by an issue or by mail; a maintainer records it with  orgfs stack correct gawk --says LICENCE --by NAME --why REASON  and a different person approves it with  orgfs stack approve CORRECTION --by NAME.
+
+** gap stack-awk-vcs
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-awk-vcs
+:WHAT_KIND: vcs-url
+:WHAT_SHAPE: the Vcs-Git URL and the upstream tag of the source package
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: not read: dpkg-query -W -f offers only the fields in the status database, and Vcs-Git is not one
+:WHY: the source package's own metadata is not on this box and no network is used
+:REACH: anyone with the source package index or the upstream project
+:ROUTE: apt-cache showsrc gawk (the Vcs- lines), after apt-get update where the source indices are missing
+:END:
+** gap stack-awk-commits
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-awk-commits
+:WHAT_KIND: commits
+:WHAT_SHAPE: the commits that make this version distinct
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: NOT CHECKED (needs the upstream tree; intake is a later slice)
+:WHY: that needs the upstream tree, which this slice does not fetch
+:REACH: anyone who can clone the upstream tree
+:ROUTE: a later intake slice: clone the upstream tree at the version's tag and run orgfs who on it
+:END:

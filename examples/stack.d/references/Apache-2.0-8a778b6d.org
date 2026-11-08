@@ -1,0 +1,13 @@
+* reference Apache-2.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: Apache-2.0-8a778b6d.org
+:NAME: Apache-2.0
+:PATH: /usr/share/doc/libopenal-data/copyright
+:SHA256: 8a778b6dfcb357aeb4efd6eabe1360b7f919af681fde1ba1f2cbcdd989fd6df9
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/libopenal-data/copyright (held by 3 packages)
+:WORDS: 86
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference Apache-2.0, read on vm, is the text at /usr/share/doc/libopenal-data/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/libopenal-data/copyright (held by 3 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

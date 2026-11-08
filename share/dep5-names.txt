@@ -1,0 +1,61 @@
+# The standard short names of DEP-5 (machine-readable debian/copyright, format 1.0), one per line.
+# Written from memory of the format's list; NOT CHECKED against the specification (it is not on this host
+# and orgfs makes no network call).  A name is matched without regard to case, and a trailing + is allowed.
+# orgfs stack treats a License: paragraph whose names are all in this list as stated in machine-readable
+# form and does not score it; every other paragraph is scored against the reference texts.
+Apache-2.0
+Artistic
+Artistic-1.0
+Artistic-2.0
+BSD-2-clause
+BSD-3-clause
+BSD-4-clause
+CC-BY-1.0
+CC-BY-2.0
+CC-BY-2.5
+CC-BY-3.0
+CC-BY-4.0
+CC-BY-SA-1.0
+CC-BY-SA-2.0
+CC-BY-SA-2.5
+CC-BY-SA-3.0
+CC-BY-SA-4.0
+CC-BY-ND-1.0
+CC-BY-ND-2.0
+CC-BY-ND-2.5
+CC-BY-ND-3.0
+CC-BY-ND-4.0
+CC-BY-NC-1.0
+CC-BY-NC-2.0
+CC-BY-NC-2.5
+CC-BY-NC-3.0
+CC-BY-NC-4.0
+CC-BY-NC-SA-1.0
+CC-BY-NC-SA-2.0
+CC-BY-NC-SA-2.5
+CC-BY-NC-SA-3.0
+CC-BY-NC-SA-4.0
+CC-BY-NC-ND-1.0
+CC-BY-NC-ND-2.0
+CC-BY-NC-ND-2.5
+CC-BY-NC-ND-3.0
+CC-BY-NC-ND-4.0
+CC0-1.0
+Expat
+GFDL
+GFDL-1.1
+GFDL-1.2
+GFDL-1.3
+GPL
+GPL-1
+GPL-2
+GPL-3
+ISC
+LGPL
+LGPL-2
+LGPL-2.1
+LGPL-3
+MPL-1.1
+MPL-2.0
+public-domain
+Zlib

@@ -1,0 +1,13 @@
+* reference GPL-3 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: GPL-3-efeb8525.org
+:NAME: GPL-3
+:PATH: /usr/share/doc/libpam-modules-bin/copyright
+:SHA256: efeb85258e0a5305e07a37dcf37711d81a00b16f2e7e6994ed159964d9f47d7f
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/libpam-modules-bin/copyright (held by 4 packages)
+:WORDS: 105
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference GPL-3, read on vm, is the text at /usr/share/doc/libpam-modules-bin/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/libpam-modules-bin/copyright (held by 4 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

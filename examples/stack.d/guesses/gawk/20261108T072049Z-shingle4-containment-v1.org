@@ -1,0 +1,29 @@
+* guess gawk :GUESS:
+:PROPERTIES:
+:ORGFS_GUESS: guesses/gawk/20261108T072049Z-shingle4-containment-v1.org
+:PACKAGE: gawk
+:METHOD: shingle4-containment
+:METHOD_VERSION: 1
+:SHINGLE_WORDS: 4
+:MIN_STANZA_WORDS: 12
+:BAND_PERCENTS: 4 9 17 (house numbers, invented)
+:MADE_AT: 2026-11-08T07:20:49Z
+:MADE_ON: vm
+:FILE_READ: /usr/share/doc/gawk/copyright
+:FILE_SHA256: 4d8bd683c14ce5e3f68094a56892ecd336524e9977b6cfd3eb22ef835d67f367
+:REFERENCE_SET_SHA256: d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01
+:REFERENCES_USED: 40
+:INPUTS_KEY: 2ef351fa5a452ff53cda7f041ddd12690f6d82f7708357a4dc6ed4d221b88efd
+:FORMAT: dep5
+:STANDARD_STANZAS_NOT_SCORED: 3
+:STANDARD_NAMES: GPL-3+
+:STANZAS_SCORED: 0
+:PROSE_BLOCKS_SET_ASIDE: 0
+:SHORT_BLOCKS_SET_ASIDE: not applicable
+:NAME_GAPS: 0
+:SUMMARY: 
+:PREVIOUS: none
+:END:
+Observed: orgfs stack (orgfs 0.5.0-dev) made this guess on 2026-11-08T07:20:49Z on vm from the dep5 copyright file /usr/share/doc/gawk/copyright (sha256 4d8bd683c14ce5e3f68094a56892ecd336524e9977b6cfd3eb22ef835d67f367), against the reference set d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01 (40 references; atoms in references/). The method is shingle4-containment, version 1. No network call and no model call was made.
+Observed: 3 paragraphs carry only standard short names (GPL-3+); the file states those in a machine-readable form, so they are taken as stated and not scored.
+Judged: nothing in this guess is a finding about the law. It says how much of the wording of the file also stands in a text the host already holds in a machine-readable form.

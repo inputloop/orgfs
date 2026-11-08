@@ -1,0 +1,14 @@
+* reference GPL-3 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: GPL-3-3972dc97.org
+:NAME: GPL-3
+:PATH: /usr/share/common-licenses/GPL-3
+:SHA256: 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 5688
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:ALIASES: GPL
+:END:
+Observed: the reference GPL-3, read on vm, is the text at /usr/share/common-licenses/GPL-3; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

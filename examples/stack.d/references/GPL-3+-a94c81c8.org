@@ -1,0 +1,13 @@
+* reference GPL-3+ :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: GPL-3+-a94c81c8.org
+:NAME: GPL-3+
+:PATH: /usr/share/doc/ffmpeg/copyright
+:SHA256: a94c81c876664948f878716c4f18e4ac87b4ce4b26714343bfce9146ab897d0d
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/ffmpeg/copyright (held by 9 packages)
+:WORDS: 79
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference GPL-3+, read on vm, is the text at /usr/share/doc/ffmpeg/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/ffmpeg/copyright (held by 9 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

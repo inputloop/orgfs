@@ -1,0 +1,14 @@
+* reference LGPL-3 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: LGPL-3-e3a994d8.org
+:NAME: LGPL-3
+:PATH: /usr/share/common-licenses/LGPL-3
+:SHA256: e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 1239
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:ALIASES: LGPL
+:END:
+Observed: the reference LGPL-3, read on vm, is the text at /usr/share/common-licenses/LGPL-3; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

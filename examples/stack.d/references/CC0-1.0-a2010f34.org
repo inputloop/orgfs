@@ -1,0 +1,13 @@
+* reference CC0-1.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: CC0-1.0-a2010f34.org
+:NAME: CC0-1.0
+:PATH: /usr/share/common-licenses/CC0-1.0
+:SHA256: a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 1080
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference CC0-1.0, read on vm, is the text at /usr/share/common-licenses/CC0-1.0; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

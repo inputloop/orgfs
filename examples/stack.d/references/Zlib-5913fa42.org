@@ -1,0 +1,13 @@
+* reference Zlib :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: Zlib-5913fa42.org
+:NAME: Zlib
+:PATH: /usr/share/doc/cmake-data/copyright
+:SHA256: 5913fa42f94d4e754217bcb667447ea2c2c05342535b6ea536edb253f36bb498
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/cmake-data/copyright (held by 39 packages)
+:WORDS: 133
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference Zlib, read on vm, is the text at /usr/share/doc/cmake-data/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/cmake-data/copyright (held by 39 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

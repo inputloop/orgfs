@@ -91,7 +91,7 @@ esac''' % (self.log, os.path.join(os.path.dirname(self.bin), "table")))
             os.makedirs(os.path.join(self.doc, pkg), exist_ok=True)
             with open(os.path.join(self.doc, pkg, "copyright"), "w") as f:
                 f.write(lic)
-        for n in ("curl", "wget", "ssh", "nc", "ncat", "ftp", "apt-get", "apt", "apt-cache", "pip", "pip3", "rsync"):
+        for n in ("curl", "wget", "ssh", "nc", "ncat", "ftp", "apt-get", "apt", "apt-cache", "pip", "pip3", "rsync", "ollama", "llama-cli", "llm"):
             self.write(n, 'echo "%s $*" >> %s; exit 1' % (n, self.log))
 
     def write(self, name, body):
@@ -105,7 +105,9 @@ esac''' % (self.log, os.path.join(os.path.dirname(self.bin), "table")))
         if not os.path.exists(os.path.join(self.bin, "nginx")):
             # "nginx is gone" must hold on a host that really has one (root's PATH has /usr/sbin)
             rest = [d for d in rest if not os.access(os.path.join(d, "nginx"), os.X_OK)]
-        return {"PATH": os.pathsep.join([self.bin] + rest), "ORGFS_DOC": self.doc}
+        cl = os.path.join(os.path.dirname(self.bin), "common-licenses")      # none: the reference texts of the host are not these tests' business
+        os.makedirs(cl, exist_ok=True)
+        return {"PATH": os.pathsep.join([self.bin] + rest), "ORGFS_DOC": self.doc, "ORGFS_COMMON_LICENSES": cl}
 
 
 def PACKAGES(v):
@@ -286,7 +288,7 @@ class StackTests(StackBase):
             src = f.read()
         region = src[src.index("# ------------------------------------------------------------------ stack"):src.index("WHO_HTML_AWK=")]
         code = "\n".join(l for l in region.split("\n") if not l.lstrip().startswith("#"))
-        bad = re.search(r"\b(curl|wget|ssh|rsync|ftp|nc|ncat)\b\s|https?://|\bgit (fetch|pull|clone)\b|apt-get (update|install|source)\b[^\"]*>", code)
+        bad = re.search(r"\b(curl|wget|ssh|rsync|ftp|nc|ncat|ollama|llama|openai|anthropic)\b\s|https?://|\bgit (fetch|pull|clone)\b|apt-get (update|install|source)\b[^\"]*>", code)
         self.assertIsNone(bad, bad and bad.group(0))
 
 

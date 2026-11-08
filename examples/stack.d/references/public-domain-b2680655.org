@@ -1,0 +1,13 @@
+* reference public-domain :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: public-domain-b2680655.org
+:NAME: public-domain
+:PATH: /usr/share/doc/bsdutils/copyright
+:SHA256: b2680655a7a3be1fbcd60f06dbb380821771e5bf42ae806e4b696ebc7e59da17
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/bsdutils/copyright (held by 11 packages)
+:WORDS: 34
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference public-domain, read on vm, is the text at /usr/share/doc/bsdutils/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/bsdutils/copyright (held by 11 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

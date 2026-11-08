@@ -73,13 +73,20 @@ usage: orgfs COMMAND ...
                              follow an object to the hosts that materialized it
   layout [--root PREFIX] [--decl DECL]
                              check the host's fixed layout (/c4, /spokes, owners)
-  site DECL OUT              render a static, script-free HTML site into OUT
+  site DECL OUT [--stack DIR]
+                             render a static, script-free HTML site into OUT; with --stack, also
+                             stack.html from a stack directory (tools, licence guesses, corrections)
   demo [DIR]                 the demo over 5 local directories and 3 spokes
   who REPO [PATH...] [--since DATE] [--until DATE] [--out FILE]
                              who worked on a local git repository, over time: an Org document in
                              which each contributor, path and commit links to the other two
   stack DIR [--seed FILE]    the tools this build stands on, one atom each, with versions, packages
-                             and licences as read here; --seed starts from an earlier composed stack
+                             and licences as read here; --seed starts from an earlier composed stack;
+                             also a licence guess per package, with its confidence and history
+  stack correct PACKAGE --says LICENCE --by NAME --why REASON [--stack DIR]
+                             propose a correction to a guess (STATE proposed)
+  stack approve CORRECTION --by NAME [--stack DIR]
+                             approve a correction; its proposer may not
   version
 USAGE
 }
@@ -480,7 +487,7 @@ END {
 '
 
 # options, filled in by main
-O_SINCE=; O_UNTIL=; O_SEED=; O_REPO=; O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0; O_SOURCE=0
+O_SAYS=; O_BY=; O_WHY=; O_STACK=; O_SINCE=; O_UNTIL=; O_SEED=; O_REPO=; O_SPOKE=; O_AS=; O_OBJECT=; O_OUT=; O_INTO=; O_ROOT=; O_DECL=; O_NOMOUNTS=0; O_SOURCE=0
 
 spoke_norm() { # SPOKE -> its data rows in the 0.1.0 shape, sorted bytewise
   $AWK -F'\t' -v s="$1" '$1=="D"&&$2==s{ l=$3; for(i=4;i<=NF;i++) l=l "\t" $i; print l }' "$TMP/all" | sort
@@ -535,7 +542,7 @@ scan_stage() {
 # DIR -> $TMP/atoms: the atoms' paths relative to DIR, in the default order
 # (prose atoms first; then each spoke in name order, its spoke.org before its members).
 atoms_list() {
-  (cd "$1" && find . -type f -name '*.org') | sed 's#^\./##' | grep -vx 'story.org' | $AWK "$ATOM_AWK"'
+  (cd "$1" && find . \( -path ./guesses -o -path ./references -o -path ./corrections \) -prune -o -type f -name '*.org' -print) | sed 's#^\./##' | grep -vx 'story.org' | $AWK "$ATOM_AWK"'
     { r = atom_check($0)
       if (r != "") { printf "orgfs: %s: %s\n", $0, r > "/dev/stderr"; bad = 1; next }
       n = split($0, a, "/")
@@ -1949,8 +1956,9 @@ st_full() {
       printf ':PACKAGE: %s\n:PACKAGE_VERSION: %s\n:SOURCE_PACKAGE: %s\n:UPSTREAM_VERSION: %s\n' "$ST_PKG" "$(st_sane "$ST_PKGVER")" "$ST_SRC" "$(st_sane "$ST_UPSTREAM")"
       [ -z "$ST_UPCOMMIT" ] || printf ':UPSTREAM_COMMIT: %s\n' "$ST_UPCOMMIT"
       [ -z "$ST_HOME" ] || printf ':HOMEPAGE: %s\n' "$(st_sane "$ST_HOME")"
+      [ ! -r "$ST_COPYRIGHT" ] || printf ':COPYRIGHT_PATH: %s\n' "$ST_COPYRIGHT"
       if [ -s "$TMP/st.lic" ] && [ -r "$ST_COPYRIGHT" ]; then
-        printf ':COPYRIGHT_PATH: %s\n:LICENSES: %s\n' "$ST_COPYRIGHT" "$(st_sane "$(tr '\n' ';' < "$TMP/st.lic" | sed -e 's/;$//' -e 's/;/; /g')")"
+        printf ':LICENSES: %s\n' "$(st_sane "$(tr '\n' ';' < "$TMP/st.lic" | sed -e 's/;$//' -e 's/;/; /g')")"
       fi
     fi
     [ -z "$ST_REGLINE" ] || printf ':REGISTER_ROW: %s (line %s of share/licensing.tsv)\n' "$(st_sane "$ST_REGNAME")" "$ST_REGLINE"
@@ -1977,6 +1985,10 @@ st_carry() {
 }
 
 cmd_stack() {
+  case ${1:-} in
+    correct) shift; st_correct "$@"; return;;
+    approve) shift; st_approve "$@"; return;;
+  esac
   _dir=${1:-}; [ -n "$_dir" ] || die "stack: need DIR (where the atoms are written)"
   ST_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   ST_HOST=$(st_sane "$(uname -n 2>/dev/null)")
@@ -2056,11 +2068,713 @@ cmd_stack() {
   mkdir -p "$_dir" || die "stack: cannot create $_dir"
   rm -f "$_dir"/tool-*.org "$_dir/story.org"
   cp "$TMP/new"/*.org "$_dir/" || die "stack: cannot write into $_dir"
+  # the licence guess of every package whose copyright file was read here (append-only records beside the atoms)
+  mkdir -p "$TMP/sc" || die "stack: no temp space"
+  sc_all "$_dir"
   # the result must be a declaration of atoms orgfs itself accepts, and its gaps whole
   compose_dir "$_dir" "$TMP/stackcheck" m || die "stack: what was written in $_dir is not a set of atoms orgfs accepts (this is a bug in orgfs stack)"
   $AWK -v mode=list "$GAPS_AWK" "$TMP/stackcheck" > "$TMP/stackgaps" || die "stack: a gap record is incomplete (this is a bug in orgfs stack)"
   _ngap=$($AWK '/^\*+ gap /{ n++ } END { print n + 0 }' "$TMP/stackcheck")
   printf 'stack: wrote %s: %s atoms (%s SEEN_HERE, %s CARRIED), %s gap records\n' "$_dir" "$((_nseen + _ncar))" "$_nseen" "$_ncar" "$_ngap"
+}
+
+# ------------------------------------------------------------------ licence confidence
+# `orgfs stack` also scores how well the words of a package's copyright file match licence texts the host
+# already holds in a machine-readable form (the reference set).  README.org, "Licence confidence", says it
+# in full; the short version:
+#   reference set  /usr/share/common-licenses/* (each by file name) and the License: paragraphs of DEP-5
+#                  copyright files on this host that carry a standard short name and a text of their own
+#   the measure    shingle-containment, version 1: normalise to words (lower case, everything but a-z0-9
+#                  is a separator), cut into runs of 4 words (shingles), and count which words of the
+#                  stanza lie inside a run that the reference also holds.  The score is that share.
+#   the bands      a gap of at most 4, 9 or 17 per cent of the words is high, moderate or low confidence;
+#                  beyond that it stays a gap and is named by kind.  4, 9 and 17 are the house numbers,
+#                  invented, not measured.
+#   a guess        is an append-only atom, DIR/guesses/PACKAGE/STAMP-METHOD.org, linked to the one before
+#                  and after it.  No network call and no model call is made anywhere in this part.
+SC_METHOD=shingle4-containment
+SC_VERSION=1
+SC_K=4
+SC_MINW=12
+SC_B1=4
+SC_B2=9
+SC_B3=17
+
+# the one rule for turning text into words, shared by every awk program of this part
+NORM_AWK='
+function nwords(s, W,   t) {
+  t = tolower(s); gsub(/\047/, "", t); gsub(/[^a-z0-9]+/, " ", t)
+  sub(/^ /, "", t); sub(/ $/, "", t)
+  if (t == "") return 0
+  return split(t, W, " ")
+}
+function stripcr(s) { sub(/\r$/, "", s); return s }
+function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+function tsv(s) { gsub(/[\t\r\n]/, " ", s); return s }
+'
+
+# DEP-5 reading, shared by the stanza cutter and the reference builder.  L[1..n] holds the lines.
+DEP5_AWK='
+function is_dep5(n,   i) {
+  for (i = 1; i <= n && i <= 5; i++) if (L[i] ~ /^[Ff]ormat:.*[Cc]opyright-?[Ff]ormat/) return 1
+  return 0
+}
+function load_std(f,   l) {
+  while ((getline l < f) > 0) { sub(/#.*/, "", l); gsub(/[ \t]/, "", l); if (l != "") STD[tolower(l)] = l }
+  close(f)
+}
+function canon_comp(c,   t, plus) {
+  t = trim(c); plus = ""
+  if (t ~ /\+$/) { plus = "+"; sub(/\+$/, "", t) }
+  if (tolower(t) in STD) return STD[tolower(t)] plus
+  return ""
+}
+function all_std(name,   t, m, a, i) {
+  t = name; gsub(/,/, " | ", t); gsub(/ [Aa][Nn][Dd] /, " | ", t); gsub(/ [Oo][Rr] /, " | ", t)
+  m = split(t, a, "|")
+  for (i = 1; i <= m; i++) if (canon_comp(a[i]) == "") return 0
+  return m > 0
+}
+# D_start D_end D_has D_name D_files D_body for the paragraphs 1..nd
+function dep5_scan(n,   i, s, curf, v, t, inpara) {
+  nd = 0; inpara = 0; curf = ""
+  for (i = 1; i <= n + 1; i++) {
+    s = (i <= n) ? L[i] : ""
+    if (s ~ /^#/) continue
+    if (s ~ /^[ \t]*$/) { if (inpara) { D_end[nd] = i - 1; inpara = 0 } curf = ""; continue }
+    if (!inpara) { nd++; inpara = 1; D_start[nd] = i; D_name[nd] = ""; D_body[nd] = ""; D_has[nd] = 0; D_files[nd] = "" }
+    if (s ~ /^[A-Za-z][A-Za-z0-9-]*:/) {
+      curf = tolower(substr(s, 1, index(s, ":") - 1)); v = trim(substr(s, index(s, ":") + 1))
+      if (curf == "license") { D_has[nd] = 1; D_name[nd] = v }
+      else if (curf == "files") D_files[nd] = v
+    } else if (s ~ /^[ \t]/) {
+      t = substr(s, 2)
+      if (t ~ /^[ \t]*\.[ \t]*$/) t = ""
+      if (curf == "license") D_body[nd] = D_body[nd] t "\n"
+      else if (curf == "files") D_files[nd] = D_files[nd] " " trim(t)
+    }
+  }
+}
+'
+
+# STZ_AWK: cut one copyright file into stanzas.  -v std=FILE (the standard short names) -v outdir=DIR -v idx=FILE
+# -v minw=N.  Writes DIR/stz_N.w (one normalised word per line) and, to idx, tab-separated records:
+#   X key value                   a fact about the whole file (format, how many standard stanzas, ...)
+#   S n kind name l1 l2 words holders cites vocab   a stanza to score
+#   G n kind name l1 l2 why       a gap with nothing to score (a non-standard name with no text of its own)
+STZ_AWK='
+function clean(text,   m, a, i, t, out) {
+  holders = 0; out = ""
+  m = split(text, a, "\n")
+  for (i = 1; i <= m; i++) {
+    t = tolower(a[i]); sub(/^[ \t#*;\/>|-]+/, "", t)
+    if (t ~ /^(copyright|\(c\))/) { holders++; continue }
+    out = out a[i] "\n"
+  }
+  return out
+}
+function vocab(W, n,   i) {
+  for (i = 1; i <= n; i++) if (W[i] ~ /^(licen|warrant|redistribut|permiss|copying|copyleft|gpl|lgpl)/) return 1
+  return 0
+}
+function cites_of(text,   t, r) {
+  if (!match(text, /\/usr\/share\/common-licenses\/[A-Za-z0-9._+-]+/)) return ""
+  t = substr(text, RSTART, RLENGTH); sub(/^.*\//, "", t); sub(/[.]+$/, "", t)
+  return t
+}
+function emit(kind, name, l1, l2, raw,   txt, n, W, i, v, c) {
+  txt = clean(raw); n = nwords(txt, W)
+  v = vocab(W, n); c = cites_of(raw)
+  if (kind == "free" && (n < 3 || (n < minw && !v))) { nshort++; return }
+  ns++
+  f = outdir "/stz_" ns ".w"
+  printf "" > f
+  for (i = 1; i <= n; i++) print W[i] > f
+  close(f)
+  printf "S\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%s\t%d\n", ns, kind, tsv(name), l1, l2, n, holders, c, v > idx
+}
+function blankish(s) { return s ~ /^[ \t#*=_~-]*$/ }
+{ L[NR] = stripcr($0) }
+END {
+  n = NR; ns = 0; nshort = 0; nstd = 0; stdlist = ""
+  load_std(std)
+  if (is_dep5(n)) {
+    printf "X\tformat\tdep5\n" > idx
+    dep5_scan(n)
+    for (p = 1; p <= nd; p++) {
+      if (!D_has[p]) continue
+      nm = D_name[p]
+      if (all_std(nm)) { nstd++; if (!(nm in seenstd)) { seenstd[nm] = 1; stdlist = stdlist (stdlist == "" ? "" : "; ") nm } continue }
+      body = clean(D_body[p]); k = nwords(body, W)
+      if (k > 0) { hasbody[nm] = 1; emit("dep5", nm, D_start[p], D_end[p], D_body[p]) }
+      else if (!(nm in firstl)) { firstl[nm] = D_start[p]; order[++no] = nm }
+    }
+    for (q = 1; q <= no; q++) if (!(order[q] in hasbody))
+      printf "G\t0\tdep5\t%s\t%d\t%d\tname-without-text\n", tsv(order[q]), firstl[order[q]], firstl[order[q]] > idx
+    printf "X\tstandard_stanzas\t%d\nX\tstandard_names\t%s\n", nstd, tsv(stdlist) > idx
+  } else {
+    printf "X\tformat\tfree-text\n" > idx
+    i = 1
+    while (i <= n) {
+      while (i <= n && blankish(L[i])) i++
+      if (i > n) break
+      s = i; raw = ""
+      while (i <= n && !blankish(L[i])) { raw = raw L[i] "\n"; i++ }
+      emit("free", "", s, i - 1, raw)
+    }
+    printf "X\tshort_blocks\t%d\n", nshort > idx
+  }
+  printf "X\tstanzas_to_score\t%d\n", ns > idx
+  close(idx)
+}
+'
+
+# REFDEP_AWK: the DEP-5 License: paragraphs on this host that can serve as reference texts.  Input: a list of
+# copyright paths (-v list=FILE); prints  name TAB packages TAB onlypkg TAB firstpath TAB text(words joined by space).
+# One text per standard name: the one held by the most packages (ties: the smaller text).
+REFDEP_AWK='
+function readfile(f,   l, n) { n = 0; while ((getline l < f) > 0) L[++n] = stripcr(l); close(f); return n }
+BEGIN {
+  load_std(std)
+  while ((getline path < list) > 0) {
+    n = readfile(path)
+    if (!is_dep5(n)) { split("", L); continue }
+    pkg = path; sub(/\/copyright$/, "", pkg); sub(/^.*\//, "", pkg)
+    dep5_scan(n)
+    for (p = 1; p <= nd; p++) {
+      if (!D_has[p]) continue
+      nm = D_name[p]
+      if (nm ~ /( [Aa][Nn][Dd] | [Oo][Rr] |,)/) continue
+      cn = canon_comp(nm)
+      if (cn == "") continue
+      if (D_body[p] ~ /\/usr\/share\/common-licenses/) continue
+      k = nwords(D_body[p], W)
+      if (k < 20) continue
+      t = W[1]; for (i = 2; i <= k; i++) t = t " " W[i]
+      key = cn SUBSEP t
+      if (!(key in lastpkg) || lastpkg[key] != pkg) { pk[key]++; lastpkg[key] = pkg; if (pk[key] == 1) { only[key] = pkg; first[key] = path } else only[key] = "" }
+      names[cn] = 1
+    }
+    split("", L)
+  }
+  for (key in pk) {
+    split(key, kk, SUBSEP); cn = kk[1]; t = kk[2]
+    if (!(cn in best) || pk[key] > bestn[cn] || (pk[key] == bestn[cn] && t < bestt[cn])) { best[cn] = key; bestn[cn] = pk[key]; bestt[cn] = t }
+  }
+  for (cn in best) printf "%s\t%d\t%s\t%s\t%s\n", cn, bestn[cn], only[best[cn]], first[best[cn]], bestt[cn]
+}
+'
+
+# SC_AWK: score the stanzas of idx against the references.  -v refs=FILE (refno TAB name TAB wordsfile TAB onlypkg TAB
+# sha TAB path TAB namefrom) -v idx=FILE -v dir=STANZADIR -v pkg=PACKAGE -v cfile=PATH -v k= -v minw= -v b1= -v b2= -v b3=
+# Writes the Org text of the stanzas to stdout and, to -v sumf=FILE, "key TAB value" lines.
+SC_AWK='
+function pm(c, n) { return int(c * 1000 / n) }
+function pct(c, n,   v) { v = pm(c, n); return sprintf("%d.%d%%", int(v / 10), v % 10) }
+# the band of a stanza whose n words leave unc uncovered: integers only, so a boundary is exact
+function band(unc, n) {
+  if (unc * 100 <= b1 * n) return "high"
+  if (unc * 100 <= b2 * n) return "moderate"
+  if (unc * 100 <= b3 * n) return "low"
+  return "gap"
+}
+function bandwords(b) {
+  if (b == "high") return "high confidence (at most " b1 " per cent of the words are outside the match)"
+  if (b == "moderate") return "moderate confidence (more than " b1 " and at most " b2 " per cent of the words are outside the match)"
+  if (b == "low") return "low confidence (more than " b2 " and at most " b3 " per cent of the words are outside the match)"
+  return "no confidence: a gap (more than " b3 " per cent of the words are outside any match)"
+}
+function lc(s) { s = tolower(s); sub(/\+$/, "", s); return s }
+function score(s, n, kind, name, l1, l2, holders, cites, vocabflag,   m, j, t, key, ne, E, e, rp, r, i, p, bestg, bestr, g, ncomp, comp, anyn, cov, cw, any, seen, prev, cur, run, bestrun, covered, tot, unc, b, gapk, top, used, ti, bc, c, gl, runs, st, en, words, nruns, line, w, ex, first) {
+  m = n - k + 1
+  split("", cov); split("", cw); split("", any); split("", seen); split("", prev); split("", bestrun)
+  for (j = 1; j <= m; j++) {
+    key = wv[j]; for (t = 1; t < k; t++) key = key " " wv[j + t]
+    split("", cur)
+    if (key in idx) {
+      ne = split(idx[key], E, " ")
+      for (e = 1; e <= ne; e++) {
+        split(E[e], rp, ":"); r = rp[1] + 0; i = rp[2] + 0
+        if (!((r, j) in seen)) { seen[r, j] = 1; for (t = 0; t < k; t++) if (!((r, j + t) in cw)) { cw[r, j + t] = 1; cov[r]++ } }
+        run = (((r ":" (i - 1)) in prev) ? prev[r ":" (i - 1)] : 0) + 1
+        cur[E[e]] = run
+        if (run > bestrun[r]) bestrun[r] = run
+      }
+    }
+    split("", prev); for (t in cur) prev[t] = cur[t]
+  }
+  anyn = 0
+  for (r = 1; r <= nr; r++) if (cov[r] > 0) for (p = 1; p <= n; p++) if ((r, p) in cw) any[p] = 1
+  for (p = 1; p <= n; p++) if (p in any) anyn++
+  # components: the reference that covers most words nothing before it covers, up to 4, each one adding at least minw words after the first
+  ncomp = 0; split("", covered); tot = 0
+  while (ncomp < 4) {
+    bestg = 0; bestr = 0
+    for (r = 1; r <= nr; r++) if (cov[r] > 0) {
+      g = 0; for (p = 1; p <= n; p++) if (((r, p) in cw) && !(p in covered)) g++
+      if (g > bestg) { bestg = g; bestr = r }
+    }
+    if (bestr == 0 || bestg < (ncomp == 0 ? 1 : minw)) break
+    ncomp++; comp[ncomp] = bestr; compadd[ncomp] = bestg
+    # references that add exactly as many words are tied with it: the choice among them is only the order of their names
+    ctien[ncomp] = 0; ctie[ncomp] = ""
+    for (r = 1; r <= nr; r++) if (r != bestr && cov[r] > 0) {
+      g = 0; for (p = 1; p <= n; p++) if (((r, p) in cw) && !(p in covered)) g++
+      if (g == bestg) { ctien[ncomp]++; if (ctien[ncomp] <= 5) ctie[ncomp] = ctie[ncomp] (ctie[ncomp] == "" ? "" : ", ") RL[r] }
+    }
+    for (p = 1; p <= n; p++) if (((bestr, p) in cw)) covered[p] = 1
+    tot += bestg
+  }
+  unc = n - tot
+  b = (n < minw) ? "gap" : band(unc, n)
+  gapk = ""
+  if (b == "gap") gapk = (n < minw) ? "too-short" : ((cites != "" && (lc(cites) in HAVE)) ? "points-at-reference" : (ncomp == 0 ? "no-reference" : "partial-text"))
+  if (kind == "free" && b == "gap" && !vocabflag) { nprose++; return }
+  nst++
+  summ = summ (summ == "" ? "" : "; ") "stanza " s ": " (ncomp > 0 ? RL[comp[1]] (ctien[1] > 0 ? " [tied with " ctien[1] "]" : "") : "no match") " (" b ")"
+  # closest three references by standalone coverage
+  split("", used); top = ""
+  for (ti = 1; ti <= 3; ti++) {
+    bc = 0; c = 0
+    for (r = 1; r <= nr; r++) if (cov[r] > bc && !(r in used)) { bc = cov[r]; c = r }
+    if (c == 0) break
+    used[c] = 1; top = top (top == "" ? "" : "; ") RL[c] " (" pct(cov[c], n) ")"
+  }
+  ex = ""; first = (n < 12) ? n : 12
+  for (j = 1; j <= first; j++) ex = ex (j > 1 ? " " : "") wv[j]
+  printf "** stanza %d\n:PROPERTIES:\n:STANZA: %d\n:KIND: %s\n", s, s, kind
+  if (name != "") printf ":NAME: %s\n", name
+  printf ":LINES: %d-%d\n:WORDS: %d\n:HOLDER_LINES_SET_ASIDE: %d\n", l1, l2, n, holders
+  printf ":BAND: %s\n:CONFIDENCE: %s\n:COVERED_WORDS: %d\n:OUTSIDE_THE_MATCH_WORDS: %d\n", b, (n < minw ? "not scored" : pct(tot, n) " of the words matched"), tot, unc
+  printf ":NOT_IN_ANY_REFERENCE_WORDS: %d\n", n - anyn
+  if (gapk != "") printf ":GAP_KIND: %s\n", gapk
+  if (ncomp > 0) printf ":BEST: %s\n", RL[comp[1]]
+  for (j = 1; j <= ncomp; j++) {
+    r = comp[j]
+    printf ":COMPONENT_%d: %s; alone %s; adds %d words%s; longest shared run %d words; sha256 %s; %s\n", j, RL[r], pct(cov[r], n), compadd[j], (ctien[j] > 0 ? "; tied with " ctien[j] " other" (ctien[j] > 1 ? "s that add" : " that adds") " as many (" ctie[j] (ctien[j] > 5 ? ", and more" : "") ")" : ""), bestrun[r] + k - 1, RSHA[r], RPATH[r]
+  }
+  if (top != "") printf ":CLOSEST: %s\n", top
+  if (name != "" && name !~ /( [Aa][Nn][Dd] | [Oo][Rr] |,)/ && ncomp > 0) printf ":NAME_AGREES: %s\n", (lc(name) == lc(RN[comp[1]]) ? "yes" : "no")
+  else if (name != "" && ncomp > 0) printf ":NAME_AGREES: not compared (the name joins several licences)\n"
+  if (cites != "") {
+    ag = "no"; for (j = 1; j <= ncomp; j++) if (lc(RN[comp[j]]) == lc(cites)) ag = "yes"
+    printf ":CITES: %s\n:CITES_IN_COMPONENTS: %s\n", cites, ag
+  }
+  printf ":STARTS: %s\n:END:\n", ex
+  if (n < minw) printf "Observed: %d words (fewer than %d), so there is too little to compare; it was not scored.\n", n, minw
+  else {
+    printf "Observed: %d words after setting aside %d copyright-holder lines; %d of them lie in 4-word runs that a reference also holds (%s).\n", n, holders, tot, pct(tot, n)
+    for (j = 1; j <= ncomp; j++) printf "Observed: %s covers %s of the stanza alone and adds %d words here; the longest run it shares with the stanza is %d words.\n", RL[comp[j]], pct(cov[comp[j]], n), compadd[j], bestrun[comp[j]] + k - 1
+    printf "Observed: %d words match no reference at all.\n", n - anyn
+  }
+  printf "Judged: %s. The bands are house numbers (4, 9, 17), invented here, not measured.\n", bandwords(b)
+  if (gapk == "no-reference") printf "Judged: a gap of kind no-reference: the stanza mentions licensing but shares no 4-word run with any reference held on this host.\n"
+  if (gapk == "partial-text") printf "Judged: a gap of kind partial-text: some of its words are in a reference, but more than %d per cent are not, so it may be another licence that shares phrases, or an altered text.\n", b3
+  if (gapk == "too-short") printf "Judged: a gap of kind too-short.\n"
+  if (gapk == "points-at-reference") printf "Judged: a gap of kind points-at-reference: the stanza names %s by path instead of carrying its text. The pointer is observed; the text it points at was not compared with anything the stanza says.\n", cites
+  if (n - anyn > 0) {
+    printf "\nObserved: the words that match no reference (normalised: lower case, punctuation gone), in order:\n#+BEGIN_EXAMPLE\n"
+    nruns = 0; p = 1
+    while (p <= n) {
+      if (p in any) { p++; continue }
+      st = p; line = ""
+      while (p <= n && !(p in any)) { line = line (p > st ? " " : "") wv[p]; p++ }
+      nruns++
+      if (nruns <= 25) { if (length(line) > 300) line = substr(line, 1, 300) " ..."; printf "words %d-%d: %s\n", st, p - 1, line }
+    }
+    if (nruns > 25) printf "[%d more runs not listed]\n", nruns - 25
+    printf "#+END_EXAMPLE\n"
+  }
+  if (cites != "") printf "\nObserved: the stanza cites /usr/share/common-licenses/%s by path.\n", cites
+}
+BEGIN {
+  FS = "\t"; summ = ""; nr = 0; nst = 0; nprose = 0; ngap = 0
+  while ((getline line < refs) > 0) {
+    split(line, f, "\t")
+    if (f[4] != "" && f[4] == pkg) continue
+    nr++; HAVE[tolower(f[2])] = 1; RN[nr] = f[2]; RL[nr] = f[2] (f[7] ~ /DEP-5/ ? " (DEP-5 paragraph)" : ""); RSHA[nr] = f[5]; RPATH[nr] = f[6]
+    mlen = 0
+    while ((getline w < f[3]) > 0) { mlen++; rw[mlen] = w }
+    close(f[3])
+    for (i = 1; i + k - 1 <= mlen; i++) { key = rw[i]; for (t = 1; t < k; t++) key = key " " rw[i + t]; idx[key] = idx[key] " " nr ":" i }
+  }
+  close(refs)
+  while ((getline line < stz) > 0) {
+    split(line, f, "\t")
+    if (f[1] == "G") { ngap++; GAPS[ngap] = line; continue }
+    if (f[1] != "S") continue
+    n = 0; split("", wv)
+    while ((getline w < (dir "/stz_" f[2] ".w")) > 0) wv[++n] = w
+    close(dir "/stz_" f[2] ".w")
+    score(f[2], n, f[3], f[4], f[5], f[6], f[8], f[9], f[10] + 0)
+  }
+  for (q = 1; q <= ngap; q++) {
+    split(GAPS[q], f, "\t")
+    printf "** stanza name %s\n:PROPERTIES:\n:KIND: %s\n:NAME: %s\n:LINES: %d-%d\n:BAND: gap\n:GAP_KIND: %s\n:END:\n", f[4], f[3], f[4], f[5], f[6], f[7]
+    printf "Observed: the name %s is not one of the standard short names, and no License: paragraph of this file carries a text under it.\n", f[4]
+    printf "Judged: a gap of kind name-without-text: there are no words of its own to compare, so nothing is scored.\n"
+  }
+  printf "summary\t%s\nstanzas\t%d\nprose_blocks_set_aside\t%d\nname_gaps\t%d\nreferences\t%d\n", summ, nst, nprose, ngap, nr > sumf
+  close(sumf)
+}
+'
+
+SC_COMMON=${ORGFS_COMMON_LICENSES:-/usr/share/common-licenses}
+
+# every property line of the drawers of the files named, flat:  FILE TAB HEADING TAB KEY TAB VALUE
+PROPS_AWK='
+FNR == 1 { inp = 0; head = "" }
+/^\*+ / { s = $0; sub(/^\*+ +/, "", s); sub(/ +:[A-Za-z0-9_@:]+:$/, "", s); head = s; inp = 0; next }
+$0 == ":PROPERTIES:" { inp = 1; next }
+$0 == ":END:" { inp = 0; next }
+inp && /^:[A-Za-z0-9_-]+:/ { k = $0; sub(/^:/, "", k); sub(/:.*$/, "", k); v = $0; sub(/^:[A-Za-z0-9_-]+:[ \t]*/, "", v); printf "%s\t%s\t%s\t%s\n", FILENAME, head, k, v }
+'
+
+# the property KEY of the first drawer of FILE
+prop_of() { $AWK -v key="$1" 'NR == 1 { next } $0 == ":END:" { exit } { p = ":" key ":"; if (index($0, p) == 1) { v = substr($0, length(p) + 1); sub(/^[ \t]+/, "", v); print v; exit } }' "$2"; }
+
+sc_slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | sed -e 's/--*/-/g' -e 's/^-//' -e 's/-$//' | cut -c1-24; }
+
+# the reference set: $TMP/sc/refs.tsv (refno, name, words file, onlypkg, sha256, path, name-from) and one atom per
+# reference in DIR/references/ (named NAME-SHA8.org; an atom that is there is never written again)
+sc_refs() { # DIR
+  _US=$(printf '\037')
+  mkdir -p "$TMP/sc/refw" || die "stack: no temp space"
+  : > "$TMP/sc/refs.raw"
+  _nr=0
+  # (1) the texts Debian ships, named by their file names; a symlink is an alias of its target
+  if [ -d "$SC_COMMON" ]; then
+    : > "$TMP/sc/cl.seen"
+    for _f in "$SC_COMMON"/*; do
+      [ -f "$_f" ] && [ ! -L "$_f" ] || continue
+      _b=${_f##*/}
+      _nr=$((_nr + 1)); _w=$TMP/sc/refw/c$_nr
+      $AWK "$NORM_AWK"' { n = nwords($0, W); for (i = 1; i <= n; i++) print W[i] }' "$_f" > "$_w"
+      _al=
+      for _g in "$SC_COMMON"/*; do
+        [ -L "$_g" ] || continue
+        [ "$(readlink -f "$_g")" = "$(readlink -f "$_f")" ] && _al="$_al ${_g##*/}"
+      done
+      _al=${_al# }
+      printf '%s\t%s\t%s\t\t%s\t%s\t%s\t%s\n' "$_nr" "$_b" "$_w" "$(sha_file "$_f")" "$_f" "the file name in $SC_COMMON" "$_al" >> "$TMP/sc/refs.raw"
+    done
+  fi
+  # (2) License: paragraphs of DEP-5 copyright files on this host: a standard short name and a text of its own
+  _doc=${ORGFS_DOC:-/usr/share/doc}
+  : > "$TMP/sc/list"
+  for _f in "$_doc"/*/copyright; do [ -r "$_f" ] && printf '%s\n' "$_f" >> "$TMP/sc/list"; done
+  if [ -s "$TMP/sc/list" ]; then
+    $AWK -v std="$SHARE/dep5-names.txt" -v list="$TMP/sc/list" "$NORM_AWK$DEP5_AWK$REFDEP_AWK" /dev/null | sort > "$TMP/sc/dep.tsv"
+    tr '\t' '\037' < "$TMP/sc/dep.tsv" > "$TMP/sc/dep.us"
+    while IFS="$_US" read -r _n _cnt _only _first _text; do
+      [ -n "$_n" ] || continue
+      _nr=$((_nr + 1)); _w=$TMP/sc/refw/d$_nr
+      printf '%s\n' "$_text" | tr ' ' '\n' > "$_w"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$_nr" "$_n" "$_w" "$_only" "$(sha_file "$_w")" "$_first" "the License: field of a DEP-5 paragraph in $_first (held by $_cnt packages)" "" >> "$TMP/sc/refs.raw"
+    done < "$TMP/sc/dep.us"
+  fi
+  sort -t "$(printf '\t')" -k2,2 -k5,5 "$TMP/sc/refs.raw" > "$TMP/sc/refs.sorted"
+  $AWK -F'\t' '{ printf "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", NR, $2, $3, $4, $5, $6, $7, $8 }' "$TMP/sc/refs.sorted" > "$TMP/sc/refs.tsv"
+  # the atoms
+  mkdir -p "$1/references" || die "stack: cannot create $1/references"
+  tr '\t' '\037' < "$TMP/sc/refs.tsv" > "$TMP/sc/refs.us"
+  while IFS="$_US" read -r _rn _n _w _only _sha _path _from _al; do
+    _ra=$1/references/$(printf '%s' "$_n" | tr -c 'A-Za-z0-9.+_\n-' '_')-$(printf '%s' "$_sha" | cut -c1-8).org
+    [ ! -e "$_ra" ] || continue
+    _nw=$(wc -l < "$_w" | tr -d ' ')
+    {
+      printf '* reference %s :REFERENCE:\n:PROPERTIES:\n:ORGFS_REFERENCE: %s\n:NAME: %s\n:PATH: %s\n:SHA256: %s\n' "$_n" "${_ra##*/}" "$_n" "$(st_sane "$_path")" "$_sha"
+      case $_from in the\ file\ name*) printf ':SHA256_OF: the file bytes\n';; *) printf ':SHA256_OF: the normalised words, one per line\n';; esac
+      printf ':NAME_FROM: %s\n:WORDS: %s\n:WRITTEN_AT: %s\n' "$(st_sane "$_from")" "$_nw" "$ST_NOW"
+      [ -z "$_al" ] || printf ':ALIASES: %s\n' "$(st_sane "$_al")"
+      [ -z "$_only" ] || printf ':ONLY_PACKAGE: %s\n' "$_only"
+      printf ':END:\nObserved: the reference %s, read on %s, is the text at %s; %s.\n' "$_n" "$ST_HOST" "$(st_sane "$_path")" "$(st_sane "$_from")"
+      printf 'Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.\n'
+    } > "$_ra"
+  done < "$TMP/sc/refs.us"
+}
+
+# PKG COPYRIGHTPATH DIR -> $TMP/sc/body (the stanzas as Org), $TMP/sc/sum, $TMP/sc/index.tsv; the inputs key in SC_KEY
+sc_run() {
+  _pkg=$1; _cp=$2
+  rm -rf "$TMP/sc/stz"; mkdir -p "$TMP/sc/stz"
+  : > "$TMP/sc/index.tsv"
+  $AWK -v std="$SHARE/dep5-names.txt" -v outdir="$TMP/sc/stz" -v idx="$TMP/sc/index.tsv" -v minw="$SC_MINW" "$NORM_AWK$DEP5_AWK$STZ_AWK" "$_cp" || return 1
+  : > "$TMP/sc/sum"
+  $AWK -v refs="$TMP/sc/refs.tsv" -v stz="$TMP/sc/index.tsv" -v dir="$TMP/sc/stz" -v pkg="$_pkg" -v cfile="$_cp" -v sumf="$TMP/sc/sum" \
+    -v k="$SC_K" -v minw="$SC_MINW" -v b1="$SC_B1" -v b2="$SC_B2" -v b3="$SC_B3" "$NORM_AWK$SC_AWK" /dev/null > "$TMP/sc/body" || return 1
+  # the references this package was scored against (a reference only this package holds is left out)
+  SC_REFSET=$($AWK -F'\t' -v pkg="$_pkg" '!($4 != "" && $4 == pkg) { print $2 "\t" $5 }' "$TMP/sc/refs.tsv" | sort | sha_stdin)
+  SC_KEY=$(sha_str "$SC_METHOD|$SC_VERSION|$SC_K|$SC_MINW|$SC_B1|$SC_B2|$SC_B3|$(sha_file "$_cp")|$SC_REFSET")
+  return 0
+}
+
+sc_fact() { $AWK -F'\t' -v key="$1" '$1 == "X" && $2 == key { print $3; exit }' "$TMP/sc/index.tsv"; }
+sc_sum() { $AWK -F'\t' -v key="$1" '$1 == key { print $2; exit }' "$TMP/sc/sum"; }
+
+# the newest guess of PKG in DIR (the one nothing follows); a forked or broken chain is an error
+sc_head() { # DIR PKG -> SC_HEAD (a path, or empty)
+  SC_HEAD=
+  _gd=$1/guesses/$2
+  [ -d "$_gd" ] || return 0
+  _heads=
+  for _g in "$_gd"/*.org; do
+    [ -f "$_g" ] || continue
+    [ -n "$(prop_of NEXT "$_g")" ] || _heads="$_heads $_g"
+  done
+  set -- $_heads
+  [ $# -le 1 ] || die "stack: the history of guesses for $2 in $_gd is forked: more than one guess has no NEXT ($*)"
+  SC_HEAD=${1:-}
+  return 0
+}
+
+# PKG COPYRIGHTPATH DIR: append a guess if the inputs changed since the newest one; say which
+sc_record() {
+  _pkg=$1; _cp=$2; _dir=$3
+  sc_run "$_pkg" "$_cp" || { warn "stack: could not score $_cp"; return 1; }
+  sc_head "$_dir" "$_pkg"; _old=$SC_HEAD
+  if [ -n "$_old" ] && [ "$(prop_of INPUTS_KEY "$_old")" = "$SC_KEY" ]; then
+    printf 'stack: guess for %s unchanged (same inputs and method as %s): nothing written\n' "$_pkg" "guesses/$_pkg/${_old##*/}"
+    return 0
+  fi
+  _gd=$_dir/guesses/$_pkg
+  mkdir -p "$_gd" || die "stack: cannot create $_gd"
+  _stamp=$(printf '%s' "$ST_NOW" | tr -d ':-')
+  _base=$_stamp-$SC_METHOD-v$SC_VERSION; _n=1
+  while [ -e "$_gd/$_base.org" ]; do _n=$((_n + 1)); _base=$_stamp-$_n-$SC_METHOD-v$SC_VERSION; done
+  _new=$_gd/$_base.org
+  {
+    printf '* guess %s :GUESS:\n:PROPERTIES:\n:ORGFS_GUESS: guesses/%s/%s.org\n:PACKAGE: %s\n' "$_pkg" "$_pkg" "$_base" "$_pkg"
+    printf ':METHOD: %s\n:METHOD_VERSION: %s\n:SHINGLE_WORDS: %s\n:MIN_STANZA_WORDS: %s\n:BAND_PERCENTS: %s %s %s (house numbers, invented)\n' "$SC_METHOD" "$SC_VERSION" "$SC_K" "$SC_MINW" "$SC_B1" "$SC_B2" "$SC_B3"
+    printf ':MADE_AT: %s\n:MADE_ON: %s\n' "$ST_NOW" "$ST_HOST"
+    printf ':FILE_READ: %s\n:FILE_SHA256: %s\n:REFERENCE_SET_SHA256: %s\n:REFERENCES_USED: %s\n:INPUTS_KEY: %s\n' "$(st_sane "$_cp")" "$(sha_file "$_cp")" "$SC_REFSET" "$(sc_sum references)" "$SC_KEY"
+    printf ':FORMAT: %s\n:STANDARD_STANZAS_NOT_SCORED: %s\n:STANDARD_NAMES: %s\n' "$(sc_fact format)" "$(sc_fact standard_stanzas)" "$(sc_fact standard_names)"
+    printf ':STANZAS_SCORED: %s\n:PROSE_BLOCKS_SET_ASIDE: %s\n:SHORT_BLOCKS_SET_ASIDE: %s\n:NAME_GAPS: %s\n' "$(sc_sum stanzas)" "$(sc_sum prose_blocks_set_aside)" "$(sc_fact short_blocks | grep . || echo 'not applicable')" "$(sc_sum name_gaps)"
+    printf ':SUMMARY: %s\n' "$(st_sane "$(sc_sum summary)")"
+    if [ -n "$_old" ]; then printf ':PREVIOUS: [[file:%s]]\n' "${_old##*/}"; else printf ':PREVIOUS: none\n'; fi
+    printf ':END:\n'
+    printf 'Observed: orgfs stack (orgfs %s) made this guess on %s on %s from the %s copyright file %s (sha256 %s), against the reference set %s (%s references; atoms in references/). The method is %s, version %s. No network call and no model call was made.\n' \
+      "$VERSION" "$ST_NOW" "$ST_HOST" "$(sc_fact format)" "$(st_sane "$_cp")" "$(sha_file "$_cp")" "$SC_REFSET" "$(sc_sum references)" "$SC_METHOD" "$SC_VERSION"
+    if [ "$(sc_fact format)" = dep5 ]; then
+      printf 'Observed: %s paragraphs carry only standard short names (%s); the file states those in a machine-readable form, so they are taken as stated and not scored.\n' "$(sc_fact standard_stanzas)" "$(st_sane "$(sc_fact standard_names)")"
+    fi
+    printf 'Judged: nothing in this guess is a finding about the law. It says how much of the wording of the file also stands in a text the host already holds in a machine-readable form.\n'
+    cat "$TMP/sc/body"
+  } > "$TMP/sc/newguess"
+  cp "$TMP/sc/newguess" "$_new" || die "stack: cannot write $_new"
+  if [ -n "$_old" ]; then
+    # the one change ever made to an old guess: NEXT is written on it, once
+    $AWK -v nx="[[file:$_base.org]]" 'BEGIN { done = 0 } !done && $0 == ":END:" { print ":NEXT: " nx; done = 1 } { print }' "$_old" > "$TMP/sc/oldguess" && cp "$TMP/sc/oldguess" "$_old" || die "stack: cannot write NEXT on $_old"
+    printf 'stack: guess for %s changed: wrote guesses/%s/%s.org after %s (%s)\n' "$_pkg" "$_pkg" "$_base" "${_old##*/}" "$(sc_sum summary)"
+  else
+    printf 'stack: guess for %s: wrote guesses/%s/%s.org (%s)\n' "$_pkg" "$_pkg" "$_base" "$(sc_sum summary)"
+  fi
+  return 0
+}
+
+# SECTION_AWK: the "licence guess" section of a tool atom, from the flat properties of the guesses and the corrections of one package
+#   -v pkg= -v head=BASENAME-OF-THE-NEWEST-GUESS (or empty) -v why=reason there is no guess
+SECTION_AWK='
+function base(p) { sub(/^.*\//, "", p); return p }
+function nowords(s) { return s }
+BEGIN { FS = "\t"; ng = 0; nz = 0 }
+{
+  f = $1; h = $2; k = $3; v = $4
+  if (f ~ /\/guesses\//) {
+    b = base(f)
+    if (!(b in G)) { G[b] = 1; gorder[++ng] = b }
+    if (h ~ /^guess /) GP[b, k] = v
+    else if (h ~ /^stanza /) {
+      if (k == "STANZA") { ns[b]++; cur[b] = h }
+      S[b, h, k] = v
+      if (!((b, h) in seenh)) { seenh[b, h] = 1; sorder[b, ++sn[b]] = h }
+      if (k ~ /^COMPONENT_/) { c = v; sub(/;.*$/, "", c); comps[b, h] = comps[b, h] (comps[b, h] == "" ? "" : ", ") c }
+    }
+  } else if (f ~ /\/corrections\//) {
+    b = base(f)
+    if (!(b in Z)) { Z[b] = 1; zorder[++nz] = b }
+    ZP[b, k] = v
+  }
+}
+END {
+  inEffect = "none"; best = ""
+  for (i = 1; i <= nz; i++) {
+    b = zorder[i]
+    if (ZP[b, "STATE"] == "approved") {
+      na++
+      if (best == "" || ZP[b, "APPROVED_AT"] > ZP[best, "APPROVED_AT"] || (ZP[b, "APPROVED_AT"] == ZP[best, "APPROVED_AT"] && b > best)) best = b
+    } else np++
+  }
+  if (best != "") inEffect = "approved correction"
+  else if (head != "") inEffect = "machine guess"
+  printf "** licence guess\n:PROPERTIES:\n:ROLE: licence-guess\n:PACKAGE: %s\n:IN_EFFECT: %s\n", pkg, inEffect
+  if (head != "") printf ":GUESS_CURRENT: guesses/%s/%s\n:GUESS_HISTORY: guesses/%s/ (%s)\n", pkg, head, pkg, (ng == 1 ? "1 guess" : ng " guesses")
+  printf ":CORRECTIONS_APPROVED: %d\n:CORRECTIONS_PROPOSED: %d\n:END:\n", na + 0, np + 0
+  if (best != "") {
+    printf "Observed: the licence in effect for package %s is %s, by a correction proposed by %s on %s and approved by %s on %s (corrections/%s/%s). The reason given: %s\n", pkg, ZP[best, "SAYS"], ZP[best, "PROPOSED_BY"], ZP[best, "PROPOSED_AT"], ZP[best, "APPROVED_BY"], ZP[best, "APPROVED_AT"], pkg, best, ZP[best, "WHY"]
+    printf "Judged: nothing. A correction is a person saying so and a second person agreeing; this tool did not check it against any text.\n"
+  }
+  if (head == "") {
+    printf "Observed: no machine guess: %s\n", why
+  } else {
+    hb = head
+    printf "Observed: the machine guess%s is guesses/%s/%s, made %s by %s version %s from %s (sha256 %s): %s.\n", (best != "" ? " (kept, and outranked by the correction above)" : ""), pkg, hb, GP[hb, "MADE_AT"], GP[hb, "METHOD"], GP[hb, "METHOD_VERSION"], GP[hb, "FILE_READ"], GP[hb, "FILE_SHA256"], (GP[hb, "SUMMARY"] == "" ? "nothing to score" : GP[hb, "SUMMARY"])
+    if (GP[hb, "FORMAT"] == "dep5" && GP[hb, "STANDARD_STANZAS_NOT_SCORED"] + 0 > 0) printf "Observed: %s paragraphs carry only standard short names (%s), taken as stated and not scored.\n", GP[hb, "STANDARD_STANZAS_NOT_SCORED"], GP[hb, "STANDARD_NAMES"]
+    for (j = 1; j <= sn[hb]; j++) {
+      h = sorder[hb, j]
+      line = "- " h " (lines " S[hb, h, "LINES"] ", " S[hb, h, "WORDS"] " words" (S[hb, h, "NAME"] != "" ? ", named " S[hb, h, "NAME"] : "") "): " (S[hb, h, "BAND"] == "gap" ? "a gap" : S[hb, h, "BAND"] " confidence") ", " S[hb, h, "CONFIDENCE"]
+      if (comps[hb, h] != "") line = line "; matches " comps[hb, h]
+      if (S[hb, h, "GAP_KIND"] != "") line = line "; a gap of kind " S[hb, h, "GAP_KIND"]
+      if (S[hb, h, "CLOSEST"] != "" && S[hb, h, "BAND"] == "gap") line = line "; closest " S[hb, h, "CLOSEST"]
+      print line
+    }
+    printf "Judged: the band edges are %s, not measured; method %s version %s. The guess atom lists, for each stanza, the words that matched no reference.\n", GP[hb, "BAND_PERCENTS"], GP[hb, "METHOD"], GP[hb, "METHOD_VERSION"]
+    if (ng > 1) {
+      printf "Observed: the history of guesses for this package has %d entries, oldest first:\n", ng
+      for (i = 1; i <= ng; i++) printf "- guesses/%s/%s: %s (%s)\n", pkg, gorder[i], GP[gorder[i], "MADE_AT"], (GP[gorder[i], "SUMMARY"] == "" ? "nothing to score" : GP[gorder[i], "SUMMARY"])
+    } else printf "Observed: this is the only guess so far for this package; a later one will be linked to it by PREVIOUS and NEXT.\n"
+  }
+  if (np + na > 0) {
+    for (i = 1; i <= nz; i++) {
+      b = zorder[i]
+      printf "- correction corrections/%s/%s: %s says %s (%s); %s\n", pkg, b, ZP[b, "PROPOSED_BY"], ZP[b, "SAYS"], ZP[b, "STATE"], (ZP[b, "STATE"] == "approved" ? "approved by " ZP[b, "APPROVED_BY"] " on " ZP[b, "APPROVED_AT"] : "waiting for someone else to approve it")
+    }
+  }
+  printf "To offer a correction: tell the project by an issue or by mail; a maintainer records it with  orgfs stack correct %s --says LICENCE --by NAME --why REASON  and a different person approves it with  orgfs stack approve CORRECTION --by NAME.\n", pkg
+}
+'
+
+# PKG DIR -> the section on stdout.  WHY is what to say when there is no guess.
+sc_section() {
+  _sp=$1; _sd=$2; _why=${3:-"no copyright file was read for this package, so there was nothing to score"}
+  sc_head "$_sd" "$_sp"
+  : > "$TMP/sc/flat"
+  for _g in "$_sd/guesses/$_sp"/*.org; do [ -f "$_g" ] && $AWK "$PROPS_AWK" "$_g" >> "$TMP/sc/flat"; done
+  for _g in "$_sd/corrections/$_sp"/*.org; do [ -f "$_g" ] && $AWK "$PROPS_AWK" "$_g" >> "$TMP/sc/flat"; done
+  $AWK -v pkg="$_sp" -v head="${SC_HEAD##*/}" -v why="$_why" "$SECTION_AWK" "$TMP/sc/flat"
+}
+
+# put SECTION (a file) into the tool atom ATOM: it replaces a licence guess section or goes before the first gap record
+sc_put() { # ATOM SECTIONFILE
+  $AWK -v sec="$2" '
+    function emit(   l) { while ((getline l < sec) > 0) print l; close(sec); print ""; done = 1 }
+    /^\*\* licence guess$/ { skip = 1; if (!done) emit(); next }
+    skip && /^\*+ / { skip = 0 }
+    skip { next }
+    !done && /^\*\* gap / { emit() }
+    { print }
+    END { if (!done) { print ""; emit() } }' "$1" | $AWK '{ L[NR] = $0 } END { n = NR; while (n > 0 && L[n] == "") n--; for (i = 1; i <= n; i++) print L[i] }' > "$TMP/sc/atomout" || return 1
+  cp "$TMP/sc/atomout" "$1"
+}
+
+# bring the licence guess section of the tool atoms of DIR up to date; MODE seen: only the atoms read here (a stack run),
+# all: every atom that names a package (a correction was made)
+sc_refresh() { # DIR MODE [PKG]
+  for _a in "$1"/tool-*.org; do
+    [ -f "$_a" ] || continue
+    _p=$(prop_of PACKAGE "$_a"); _p=${_p%%:*}
+    [ -n "$_p" ] || continue
+    [ -z "${3:-}" ] || [ "$_p" = "$3" ] || continue
+    if [ "$2" = seen ]; then head -n 1 "$_a" | grep -q ':SEEN_HERE:' || continue; fi
+    _why="the copyright file of this package could not be read (see the gap record), so there was nothing to score"
+    sc_section "$_p" "$1" "$_why" > "$TMP/sc/section"
+    sc_put "$_a" "$TMP/sc/section" || die "stack: cannot update the licence guess of $_a"
+  done
+}
+
+# after a stack run: score every package whose copyright file was read here
+sc_all() { # DIR
+  sc_refs "$1"
+  : > "$TMP/sc/done"
+  for _a in "$1"/tool-*.org; do
+    [ -f "$_a" ] || continue
+    head -n 1 "$_a" | grep -q ':SEEN_HERE:' || continue
+    _p=$(prop_of PACKAGE "$_a"); _p=${_p%%:*}; _c=$(prop_of COPYRIGHT_PATH "$_a")
+    [ -n "$_p" ] && [ -n "$_c" ] && [ -r "$_c" ] || continue
+    grep -qx "$_p" "$TMP/sc/done" && continue
+    printf '%s\n' "$_p" >> "$TMP/sc/done"
+    sc_record "$_p" "$_c" "$1" || true
+  done
+  sc_refresh "$1" seen
+}
+
+# ---- corrections: a person says what the licence is, a second person agrees; the machine guess stays beside it
+# one plain line, not empty, no control characters, at most 500 bytes
+st_plain() { # WHAT VALUE
+  [ -n "$2" ] || die "stack: $1 is needed"
+  [ "$(printf '%s' "$2" | tr -d '\000-\037' | wc -c | tr -d ' ')" = "$(printf '%s' "$2" | wc -c | tr -d ' ')" ] || die "stack: $1 must be one plain line (no tab, newline or other control character)"
+  [ "$(printf '%s' "$2" | wc -c | tr -d ' ')" -le 500 ] || die "stack: $1 is longer than 500 bytes"
+  [ -n "$(printf '%s' "$2" | tr -d ' ')" ] || die "stack: $1 is empty"
+}
+st_name_key() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -s ' ' | sed -e 's/^ //' -e 's/ $//'; }
+
+st_correct() { # PACKAGE (--says --by --why [--stack DIR])
+  _pkg=${1:-}; [ -n "$_pkg" ] || die "stack correct: need PACKAGE"
+  case $_pkg in *[!A-Za-z0-9.+_-]*|[!A-Za-z0-9]*) die "stack correct: a package name is letters, digits, dot, plus, dash and underscore";; esac
+  st_plain "--says" "$O_SAYS"; st_plain "--by" "$O_BY"; st_plain "--why" "$O_WHY"
+  _dir=${O_STACK:-stack}
+  [ -d "$_dir" ] || die "stack correct: there is no stack directory $_dir (name it with --stack DIR)"
+  _found=0
+  for _a in "$_dir"/tool-*.org; do
+    [ -f "$_a" ] || continue
+    _p=$(prop_of PACKAGE "$_a"); [ "${_p%%:*}" = "$_pkg" ] && _found=1
+  done
+  [ "$_found" = 1 ] || die "stack correct: no tool atom in $_dir names the package $_pkg"
+  mkdir -p "$TMP/sc" || die "stack: no temp space"
+  ST_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  sc_head "$_dir" "$_pkg"
+  _then=none; [ -z "$SC_HEAD" ] || _then="[[file:../../guesses/$_pkg/${SC_HEAD##*/}]]"
+  _cd=$_dir/corrections/$_pkg
+  mkdir -p "$_cd" || die "stack correct: cannot create $_cd"
+  _id=$(date -u +%Y%m%dT%H%M%SZ)-$(sc_slug "$O_BY"); _n=1; _base=$_id
+  while [ -e "$_cd/$_base.org" ]; do _n=$((_n + 1)); _base=$_id-$_n; done
+  {
+    printf '* correction %s :CORRECTION:\n:PROPERTIES:\n:ORGFS_CORRECTION: corrections/%s/%s.org\n:PACKAGE: %s\n:SAYS: %s\n:STATE: proposed\n' "$_pkg" "$_pkg" "$_base" "$_pkg" "$O_SAYS"
+    printf ':PROPOSED_BY: %s\n:PROPOSED_AT: %s\n:WHY: %s\n:GUESS_THEN: %s\n:END:\n' "$O_BY" "$ST_NOW" "$O_WHY" "$_then"
+    printf 'Observed: %s proposed on %s that the licence of package %s is %s, because: %s\n' "$O_BY" "$ST_NOW" "$_pkg" "$O_SAYS" "$O_WHY"
+    printf 'Judged: nothing. It is a claim by the person named, entered as typed; it is not in effect until someone else approves it, and the machine guess it was made against is linked above and stays.\n'
+  } > "$_cd/$_base.org"
+  sc_refresh "$_dir" all "$_pkg"
+  printf 'correction: wrote %s/corrections/%s/%s.org (STATE proposed, by %s); another person approves it with: orgfs stack approve %s/%s --by NAME --stack %s\n' "$_dir" "$_pkg" "$_base" "$O_BY" "$_pkg" "$_base" "$_dir"
+}
+
+st_approve() { # CORRECTION (--by [--stack DIR]) where CORRECTION is PACKAGE/ID, an ID, or a path
+  _arg=${1:-}; [ -n "$_arg" ] || die "stack approve: need CORRECTION"
+  st_plain "--by" "$O_BY"
+  _dir=${O_STACK:-stack}
+  [ -d "$_dir/corrections" ] || die "stack approve: there are no corrections in $_dir (name the stack directory with --stack DIR)"
+  _f=
+  for _try in "$_dir/corrections/${_arg%.org}.org" "$_arg"; do
+    [ -f "$_try" ] && { _f=$_try; break; }
+  done
+  if [ -z "$_f" ]; then
+    _m=0
+    for _try in "$_dir"/corrections/*/"${_arg%.org}.org"; do [ -f "$_try" ] && { _m=$((_m + 1)); _f=$_try; }; done
+    [ "$_m" -le 1 ] || die "stack approve: $_arg names $_m corrections; say PACKAGE/ID"
+  fi
+  [ -n "$_f" ] || die "stack approve: no correction $_arg in $_dir/corrections"
+  _real=$(cd "$(dirname "$_f")" && pwd -P)/$(basename "$_f"); _root=$(cd "$_dir/corrections" && pwd -P)
+  case $_real in "$_root"/*) :;; *) die "stack approve: $_f is not a correction of $_dir";; esac
+  _state=$(prop_of STATE "$_f"); _by=$(prop_of PROPOSED_BY "$_f"); _pkg=$(prop_of PACKAGE "$_f")
+  if [ "$_state" = approved ]; then
+    printf 'approve: %s is already approved (by %s on %s); nothing changed\n' "$_f" "$(prop_of APPROVED_BY "$_f")" "$(prop_of APPROVED_AT "$_f")"
+    return 0
+  fi
+  [ "$_state" = proposed ] || die "stack approve: $_f has STATE '$_state', not proposed"
+  if [ "$(st_name_key "$_by")" = "$(st_name_key "$O_BY")" ]; then
+    die "stack approve: refused. $_by proposed this correction, and the person who proposes a correction cannot approve it; someone else must"
+  fi
+  mkdir -p "$TMP/sc" || die "stack: no temp space"
+  ST_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  $AWK -v by="$O_BY" -v at="$ST_NOW" '
+    BEGIN { done = 0 }
+    !done && $0 == ":STATE: proposed" { print ":STATE: approved"; next }
+    !done && $0 == ":END:" { print ":APPROVED_BY: " by; print ":APPROVED_AT: " at; done = 1 }
+    { print }
+    END { printf "Observed: %s approved this correction on %s. It now outranks the machine guess in the tool atom; the guess stays beside it.\n", by, at }' "$_f" > "$TMP/sc/corr" || die "stack approve: cannot write the approval"
+  cp "$TMP/sc/corr" "$_f"
+  sc_refresh "$_dir" all "$_pkg"
+  printf 'approve: %s approved by %s at %s (STATE approved; proposed by %s)\n' "$_f" "$O_BY" "$ST_NOW" "$_by"
 }
 
 # The document `orgfs who` writes, as HTML.  It reads only the shapes who writes: headings with a
@@ -2108,6 +2822,112 @@ want { if ($0 == ":PROPERTIES:") { indr = 1; next } else heading() }
 { closelist(); para($0) }
 END { if (want) heading(); closelist() }
 '
+
+# ---- the page for the tools orgfs stands on: stack.html, from a stack directory (atoms, guesses, corrections)
+# input: the flat properties of every atom (paths relative to the stack directory)
+STACK_HTML_AWK='
+function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); return s }
+function base(p) { sub(/^.*\//, "", p); return p }
+function pk(p,   a, n) { n = split(p, a, "/"); return a[2] }
+function plural(n, one, many) { return n == 1 ? "1 " one : n " " many }
+BEGIN { FS = "\t"; nt = 0 }
+{
+  f = $1; h = $2; k = $3; v = $4
+  if (f ~ /^tool-/) {
+    if (k == "ORGFS_ATOM") { MH[f] = h; TF[f] = 1 }
+    if (h == MH[f]) T[f, k] = v
+    else if (h == "licence guess") LG[f, k] = v
+  } else if (f ~ /^guesses\//) {
+    P = pk(f)
+    if (!(f in GF)) { GF[f] = 1; GL[P, ++GN[P]] = f }
+    if (h ~ /^guess /) GP[f, k] = v
+    else if (h ~ /^stanza /) {
+      if (!((f, h) in SH)) { SH[f, h] = 1; SO[f, ++SN[f]] = h }
+      S[f, h, k] = v
+      if (k ~ /^COMPONENT_/) { c = v; sub(/;.*$/, "", c); SC[f, h] = SC[f, h] (SC[f, h] == "" ? "" : ", ") c }
+    }
+  } else if (f ~ /^corrections\//) {
+    P = pk(f)
+    if (!(f in ZF)) { ZF[f] = 1; ZL[P, ++ZN[P]] = f }
+    ZP[f, k] = v
+  }
+}
+END {
+  n = split(order, ord, " ")
+  for (i = 1; i <= n; i++) { t = ord[i]; f = "tool-" t ".org"; if (f in TF) { nt++; TL[nt] = f; TN[nt] = t } }
+  printf "<h1>The tools orgfs stands on, and how sure we are of their licences</h1>\n"
+  f0 = TL[1]
+  printf "<p class=\"status\">Status: orgfs %s, before 1.0. %s tools read by <code>orgfs stack</code> on %s at %s; the facts below are the ones in the atoms, not new ones. Nothing on this page says the tests passed; run <code>make check</code>.</p>\n", version, nt, esc(T[f0, "READ_ON"]), esc(T[f0, "READ_AT"])
+  printf "<p><span class=\"tag\">observed</span>Each tool below is an atom (an Org file) that quotes the command that gave its version and the licence names its Debian package states in its own copyright file. This page adds a <em>confidence</em>: how much of the wording of that copyright file also stands in a licence text this host already holds in a machine-readable form (the files in <code>/usr/share/common-licenses</code> and the <code>License:</code> paragraphs of machine-readable copyright files on the same host).</p>\n"
+  printf "<p><span class=\"tag\">observed</span>The measure is <em>shingle containment</em>, version 1: lower-case the words, cut them into runs of 4, and count which words of a stanza lie inside a run that a reference also holds. The score is that share. The words that match no reference are listed in the guess, because they are where the file says something the reference does not. The reference texts themselves are atoms, each with its name, path, SHA-256 and where its name came from. No network call and no model call is made.</p>\n"
+  printf "<p><span class=\"tag\">judged</span>The bands are a gap of at most 4 per cent of the words for <em>high</em>, 9 for <em>moderate</em> and 17 for <em>low</em>; more than that stays a gap, and says what kind. The numbers 4, 9 and 17 are house numbers, invented, not measured. Would be wrong if two stanzas with the same meaning get bands more than one step apart, or one with a different meaning gets a high band; the corrections below are where that would show.</p>\n"
+  printf "<p><span class=\"tag\">asked</span>Corwin Brust, 2026-11-08, 00:50: &quot;let&#39;s see if we can score licenses per our confidence we understanding the meaning of the words&quot; and &quot;provide access to the history (if there is any) of each of our guesses&quot;.</p>\n"
+  for (i = 1; i <= nt; i++) {
+    f = TL[i]; t = TN[i]; pkg = T[f, "PACKAGE"]; sub(/:.*$/, "", pkg)
+    printf "<h2 id=\"tool-%s\">%s</h2>\n", esc(t), esc(t)
+    printf "<dl>\n"
+    printf "<dt>Version</dt><dd>%s</dd>\n", esc(T[f, "VERSION"] == "" ? "not read" : T[f, "VERSION"])
+    if (pkg == "") { printf "<dt>Package</dt><dd>not read (see the gap records in <a href=\"stack/%s\">the atom</a>)</dd>\n</dl>\n", esc(f); continue }
+    printf "<dt>Package</dt><dd>%s %s</dd>\n", esc(pkg), esc(T[f, "PACKAGE_VERSION"])
+    printf "<dt>Licence names the package states</dt><dd>%s</dd>\n", esc(T[f, "LICENSES"] == "" ? "none: the copyright file has no License: line" : T[f, "LICENSES"])
+    best = ""
+    for (j = 1; j <= ZN[pkg]; j++) { z = ZL[pkg, j]; if (ZP[z, "STATE"] == "approved" && (best == "" || ZP[z, "APPROVED_AT"] > ZP[best, "APPROVED_AT"] || (ZP[z, "APPROVED_AT"] == ZP[best, "APPROVED_AT"] && z > best))) best = z }
+    gh = GL[pkg, GN[pkg]]
+    for (j = 1; j <= GN[pkg]; j++) if (GP[GL[pkg, j], "NEXT"] == "") gh = GL[pkg, j]
+    if (best != "") printf "<dt>In effect</dt><dd><strong>%s</strong>, an approved correction proposed by %s and approved by %s on %s (reason: %s). <a href=\"stack/%s\">The correction</a>.</dd>\n", esc(ZP[best, "SAYS"]), esc(ZP[best, "PROPOSED_BY"]), esc(ZP[best, "APPROVED_BY"]), esc(ZP[best, "APPROVED_AT"]), esc(ZP[best, "WHY"]), esc(best)
+    else if (gh != "") printf "<dt>In effect</dt><dd>The machine guess below; no correction has been approved.</dd>\n"
+    else printf "<dt>In effect</dt><dd>Nothing: there is no guess for this package.</dd>\n"
+    if (gh == "") { printf "</dl>\n<p><span class=\"tag\">observed</span>No guess: the copyright file of this package was not read here.</p>\n"; continue }
+    printf "<dt>Machine guess%s</dt><dd>made %s by %s version %s from the %s copyright file <code>%s</code> (SHA-256 <code>%s</code>); <a href=\"stack/%s\">the guess atom</a>.</dd>\n", (best != "" ? " (kept)" : ""), esc(GP[gh, "MADE_AT"]), esc(GP[gh, "METHOD"]), esc(GP[gh, "METHOD_VERSION"]), esc(GP[gh, "FORMAT"]), esc(GP[gh, "FILE_READ"]), esc(GP[gh, "FILE_SHA256"]), esc(gh)
+    printf "<dt>History</dt><dd>%s:", plural(GN[pkg], "guess", "guesses")
+    for (j = 1; j <= GN[pkg]; j++) { g = GL[pkg, j]; printf "%s <a href=\"stack/%s\">%s</a> (%s)", (j > 1 ? ";" : ""), esc(g), esc(GP[g, "MADE_AT"]), esc(GP[g, "SUMMARY"] == "" ? "nothing to score" : GP[g, "SUMMARY"]) }
+    printf ". Each links to the one before and after it.</dd>\n"
+    printf "<dt>Corrections</dt><dd>"
+    if (ZN[pkg] == 0) printf "none yet"
+    for (j = 1; j <= ZN[pkg]; j++) { z = ZL[pkg, j]; printf "%s<a href=\"stack/%s\">%s says %s</a> (%s%s)", (j > 1 ? "; " : ""), esc(z), esc(ZP[z, "PROPOSED_BY"]), esc(ZP[z, "SAYS"]), esc(ZP[z, "STATE"]), (ZP[z, "STATE"] == "approved" ? " by " esc(ZP[z, "APPROVED_BY"]) : "") }
+    printf "</dd>\n</dl>\n"
+    if (GP[gh, "FORMAT"] == "dep5" && GP[gh, "STANDARD_STANZAS_NOT_SCORED"] + 0 > 0)
+      printf "<p><span class=\"tag\">observed</span>%s paragraphs of this machine-readable file carry only standard short names (%s). They state their licence in a form a program can read, so they are taken as stated and not scored.</p>\n", esc(GP[gh, "STANDARD_STANZAS_NOT_SCORED"]), esc(GP[gh, "STANDARD_NAMES"])
+    if (SN[gh] == 0) { printf "<p><span class=\"tag\">observed</span>Nothing in this file was left to score.</p>\n"; continue }
+    printf "<div class=\"scroll\" role=\"region\" aria-label=\"Stanzas scored for %s\" tabindex=\"0\">\n<table>\n<caption>Stanzas of the copyright file of %s, scored (guess %s)</caption>\n<thead><tr><th scope=\"col\">Stanza</th><th scope=\"col\">Words</th><th scope=\"col\">Confidence</th><th scope=\"col\">Matches</th></tr></thead>\n<tbody>\n", esc(pkg), esc(pkg), esc(base(gh))
+    for (j = 1; j <= SN[gh]; j++) {
+      h = SO[gh, j]
+      b = S[gh, h, "BAND"]; gk = S[gh, h, "GAP_KIND"]
+      conf = (b == "gap") ? "a gap" (gk != "" ? " (" gk ")" : "") : b " confidence"
+      printf "<tr><th scope=\"row\">%s%s<br>lines %s</th><td>%s</td><td>%s<br>%s</td><td>%s</td></tr>\n", esc(S[gh, h, "STANZA"] == "" ? h : "stanza " S[gh, h, "STANZA"]), (S[gh, h, "NAME"] != "" ? ", " esc(S[gh, h, "NAME"]) : ""), esc(S[gh, h, "LINES"]), esc(S[gh, h, "WORDS"]), esc(S[gh, h, "CONFIDENCE"]), esc(conf), esc(SC[gh, h] != "" ? SC[gh, h] : (S[gh, h, "CLOSEST"] != "" ? "closest: " S[gh, h, "CLOSEST"] : "no reference"))
+    }
+    printf "</tbody>\n</table>\n</div>\n"
+  }
+  printf "<h2 id=\"correct\">Offer a correction</h2>\n"
+  printf "<p><span class=\"tag\">observed</span>A guess is a guess. If you read a copyright file and see that a stanza says something else, open an issue at <a href=\"https://github.com/inputloop/orgfs/issues\">github.com/inputloop/orgfs/issues</a> or send mail to <a href=\"mailto:corwin@bru.st\">corwin@bru.st</a>, and say the package, the licence you say it is, and why. A maintainer records it with <code>orgfs stack correct PACKAGE --says LICENCE --by NAME --why REASON</code>; it then shows here as <em>proposed</em>. A different person approves it with <code>orgfs stack approve CORRECTION --by NAME</code>; the person who proposed it cannot. Only an approved correction outranks the guess, and the guess stays on this page and in its history either way. This site is static, so there is no form.</p>\n"
+  printf "<h2>Not checked</h2>\n<ul>\n"
+  printf "<li>That a name typed in <code>--by</code> is the person it names: orgfs does not authenticate it, so the rule that a proposer cannot approve is about names, not people.</li>\n"
+  printf "<li>That the standard short names list (<code>share/dep5-names.txt</code>) matches the DEP-5 specification: it was written from memory, and the specification is not on the host.</li>\n"
+  printf "<li>That any band is right. The edges are invented, and no reader has yet compared a band with a lawyer&#39;s reading.</li>\n"
+  printf "<li>Paragraphs of a machine-readable file whose names are standard are not scored, even where their text might disagree with the name.</li>\n</ul>\n"
+}
+'
+
+site_stack() { # OUT STACKDIR
+  _so=$1; _sd=$2
+  [ -d "$_sd" ] || die "site: no stack directory $_sd"
+  mkdir -p "$TMP/sc" || die "site: no temp space"
+  : > "$TMP/sc/siteflat"
+  ( cd "$_sd" && for _f in tool-*.org guesses/*/*.org corrections/*/*.org; do [ -f "$_f" ] && $AWK "$PROPS_AWK" "$_f"; done ) >> "$TMP/sc/siteflat" 2>/dev/null
+  # the atoms themselves, so that every link on the page leads somewhere
+  for _f in "$_sd"/story.org "$_sd"/tool-*.org "$_sd"/guesses/*/*.org "$_sd"/corrections/*/*.org "$_sd"/references/*.org; do
+    [ -f "$_f" ] || continue
+    _rel=${_f#"$_sd"/}
+    mkdir -p "$_so/stack/$(dirname "$_rel")" || die "site: cannot create $_so/stack"
+    cp "$_f" "$_so/stack/$_rel"
+  done
+  {
+    html_head "The tools orgfs stands on" stack
+    $AWK -v order="$ST_TOOLS" -v version="$VERSION" "$STACK_HTML_AWK" "$TMP/sc/siteflat" < /dev/null
+    html_foot
+  } > "$_so/stack.html"
+}
+
 
 site_who() { # OUT: who.org and who.html, or a page that says there was no history to read
   _wrepo=${O_REPO:-}
@@ -2293,6 +3113,7 @@ $([ "${_allpublic:-0}" != 1 ] || printf '<li><a href="declaration.html"%s>The de
 <li><a href="who.html"$(cur who "$2")>Who worked on this</a></li>
 <li><a href="gaps.html"$(cur gaps "$2")>A view with its gaps</a></li>
 <li><a href="licensing.html"$(cur licensing "$2")>Licensing stack</a></li>
+$([ "${_stackpage:-0}" != 1 ] || printf '<li><a href="stack.html"%s>Tools it stands on</a></li>\n' "$(cur stack "$2")")
 <li><a href="rights.html"$(cur rights "$2")>Your rights on this site</a></li>
 </ul>
 </nav>
@@ -2518,6 +3339,7 @@ cmd_site() {
   cp "$SHARE/licensing.tsv" "$_out/licensing.tsv"
   $AWK "$REGISTER_TXT_AWK" "$SHARE/licensing.tsv" > "$_out/licensing.txt" || die "site: bad register"
   _allpublic=1
+  _stackpage=0; [ -z "$O_STACK" ] || _stackpage=1
   for _s in $SPOKES; do load_spoke "$_s"; [ "$VIS" = public ] || _allpublic=0; done
   _nplural=spokes; [ "$NSP" != 1 ] || _nplural=spoke
   if [ "$_allpublic" = 1 ]; then
@@ -2777,6 +3599,7 @@ EOF
     html_foot
   } > "$_out/rights.html"
   site_who "$_out"
+  if [ "$_stackpage" = 1 ]; then site_stack "$_out" "$O_STACK"; printf 'site: wrote %s/stack.html and the atoms it links to, from %s\n' "$_out" "$O_STACK"; fi
   printf 'site: wrote %s (index.html gaps.html licensing.html rights.html who.html orgfs.css view-visitor.org)\n' "$_out"
 }
 
@@ -2889,13 +3712,14 @@ _n=$#
 while [ "$_n" -gt 0 ]; do
   _a=$1; shift; _n=$((_n - 1))
   case $_a in
-    --spoke|--as|--object|--out|--into|--root|--decl|--since|--until|--seed|--repo)
+    --spoke|--as|--object|--out|--into|--root|--decl|--since|--until|--seed|--repo|--says|--by|--why|--stack)
       [ "$_n" -gt 0 ] || die "$_a needs a value"
       _v=$1; shift; _n=$((_n - 1))
       case $_a in
         --spoke) O_SPOKE=$_v;; --as) O_AS=$_v;; --object) O_OBJECT=$_v;; --out) O_OUT=$_v;;
         --into) O_INTO=$_v;; --root) O_ROOT=$_v;; --decl) O_DECL=$_v;;
         --since) O_SINCE=$_v;; --until) O_UNTIL=$_v;; --seed) O_SEED=$_v;; --repo) O_REPO=$_v;;
+        --says) O_SAYS=$_v;; --by) O_BY=$_v;; --why) O_WHY=$_v;; --stack) O_STACK=$_v;;
       esac;;
     --no-mounts) O_NOMOUNTS=1;;
     --source) O_SOURCE=1;;

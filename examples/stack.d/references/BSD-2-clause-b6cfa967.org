@@ -1,0 +1,13 @@
+* reference BSD-2-clause :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: BSD-2-clause-b6cfa967.org
+:NAME: BSD-2-clause
+:PATH: /usr/share/doc/cmake-data/copyright
+:SHA256: b6cfa967258c45cbc4400f8740d614ce8d2c9155fb4986287f7dd2dd62c30890
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/cmake-data/copyright (held by 19 packages)
+:WORDS: 186
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference BSD-2-clause, read on vm, is the text at /usr/share/doc/cmake-data/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/cmake-data/copyright (held by 19 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

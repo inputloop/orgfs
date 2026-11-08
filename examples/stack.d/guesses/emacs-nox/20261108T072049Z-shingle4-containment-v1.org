@@ -1,0 +1,633 @@
+* guess emacs-nox :GUESS:
+:PROPERTIES:
+:ORGFS_GUESS: guesses/emacs-nox/20261108T072049Z-shingle4-containment-v1.org
+:PACKAGE: emacs-nox
+:METHOD: shingle4-containment
+:METHOD_VERSION: 1
+:SHINGLE_WORDS: 4
+:MIN_STANZA_WORDS: 12
+:BAND_PERCENTS: 4 9 17 (house numbers, invented)
+:MADE_AT: 2026-11-08T07:20:49Z
+:MADE_ON: vm
+:FILE_READ: /usr/share/doc/emacs-nox/copyright
+:FILE_SHA256: 16938087445258f5d8458dcc7b559d09348081d0b1331539a14b2087dc38dce0
+:REFERENCE_SET_SHA256: d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01
+:REFERENCES_USED: 40
+:INPUTS_KEY: 18559bccff58421f6b6e7caa4a6c41e54275003e195665c07300bff43e020b6f
+:FORMAT: dep5
+:STANDARD_STANZAS_NOT_SCORED: 10
+:STANDARD_NAMES: GPL-3+; LGPL-2+; LGPL-3+; GPL-2+ or LGPL-3+; GPL-2+; MPL-2.0; GPL-2
+:STANZAS_SCORED: 18
+:PROSE_BLOCKS_SET_ASIDE: 0
+:SHORT_BLOCKS_SET_ASIDE: not applicable
+:NAME_GAPS: 1
+:SUMMARY: stanza 1: no match (gap); stanza 2: Expat (DEP-5 paragraph) (gap); stanza 3: GFDL-1.2 [tied with 12] (gap); stanza 4: CC-BY-3.0 (DEP-5 paragraph) [tied with 4] (gap); stanza 5: CC-BY-3.0 (DEP-5 paragraph) [tied with 4] (gap); stanza 6: MPL-1.1 (DEP-5 paragraph) [tied with 2] (gap); stanza 7: CC-BY-SA-3.0 (DEP-5 paragraph) (gap); stanza 8: CC-BY-SA-3.0 (DEP-5 paragraph) (gap); stanza 9: public-domain (DEP-5 paragraph) (gap); stanza 10: LGPL-2.1 (gap); stanza 11: GPL-2 (gap); stanza 12: GFDL-1.2 [tied with 2] (gap); stanza 13: GPL-1 (gap); stanza 14: no match (gap); stanza 15: GPL-1 (gap); stanza 16: Expat (DEP-5 paragraph) (gap); stanza 17: Zlib (DEP-5 paragraph) (gap); stanza 18: GFDL-1.2 [tied with 1] (gap)
+:PREVIOUS: none
+:END:
+Observed: orgfs stack (orgfs 0.5.0-dev) made this guess on 2026-11-08T07:20:49Z on vm from the dep5 copyright file /usr/share/doc/emacs-nox/copyright (sha256 16938087445258f5d8458dcc7b559d09348081d0b1331539a14b2087dc38dce0), against the reference set d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01 (40 references; atoms in references/). The method is shingle4-containment, version 1. No network call and no model call was made.
+Observed: 10 paragraphs carry only standard short names (GPL-3+; LGPL-2+; LGPL-3+; GPL-2+ or LGPL-3+; GPL-2+; MPL-2.0; GPL-2); the file states those in a machine-readable form, so they are taken as stated and not scored.
+Judged: nothing in this guess is a finding about the law. It says how much of the wording of the file also stands in a text the host already holds in a machine-readable form.
+** stanza 1
+:PROPERTIES:
+:STANZA: 1
+:KIND: dep5
+:LINES: 41-52
+:WORDS: 4
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: not scored
+:COVERED_WORDS: 0
+:OUTSIDE_THE_MATCH_WORDS: 4
+:NOT_IN_ANY_REFERENCE_WORDS: 4
+:GAP_KIND: too-short
+:STARTS: admin unidata copyright html
+:END:
+Observed: 4 words (fewer than 12), so there is too little to compare; it was not scored.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind too-short.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-4: admin unidata copyright html
+#+END_EXAMPLE
+** stanza 2
+:PROPERTIES:
+:STANZA: 2
+:KIND: dep5
+:LINES: 54-84
+:WORDS: 239
+:HOLDER_LINES_SET_ASIDE: 1
+:BAND: gap
+:CONFIDENCE: 66.1% of the words matched
+:COVERED_WORDS: 158
+:OUTSIDE_THE_MATCH_WORDS: 81
+:NOT_IN_ANY_REFERENCE_WORDS: 64
+:GAP_KIND: partial-text
+:BEST: Expat (DEP-5 paragraph)
+:COMPONENT_1: Expat (DEP-5 paragraph); alone 66.1%; adds 158 words; longest shared run 122 words; sha256 d6ab49c37015ea3263f730f8cadb52445cde82bea3e73ed58efb90481f3e00e8; /usr/share/doc/age/copyright
+:CLOSEST: Expat (DEP-5 paragraph) (66.1%); ISC (DEP-5 paragraph) (15.4%); GPL-1 (12.5%)
+:STARTS: this originates from x11r5 mit util scripts install sh which was later
+:END:
+Observed: 239 words after setting aside 1 copyright-holder lines; 158 of them lie in 4-word runs that a reference also holds (66.1%).
+Observed: Expat (DEP-5 paragraph) covers 66.1% of the stanza alone and adds 158 words here; the longest run it shares with the stanza is 122 words.
+Observed: 64 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-21: this originates from x11r5 mit util scripts install sh which was later released in x11r6 xc config util install sh with
+words 149-150: x consortium
+words 175-176: connec tion
+words 189-194: except as contained in this notice
+words 199-200: x consortium
+words 205-235: in advertising or otherwise to promote the sale use or other deal ings in this software without prior written authorization from the x consor tium fsf changes to this file are
+#+END_EXAMPLE
+** stanza 3
+:PROPERTIES:
+:STANZA: 3
+:KIND: dep5
+:NAME: GPL plus Ian
+:LINES: 86-90
+:WORDS: 29
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 31.0% of the words matched
+:COVERED_WORDS: 9
+:OUTSIDE_THE_MATCH_WORDS: 20
+:NOT_IN_ANY_REFERENCE_WORDS: 14
+:GAP_KIND: partial-text
+:BEST: GFDL-1.2
+:COMPONENT_1: GFDL-1.2; alone 31.0%; adds 9 words; tied with 12 others that add as many (GFDL-1.3, GPL-1, GPL-2, GPL-2+ (DEP-5 paragraph), GPL-3, and more); longest shared run 6 words; sha256 d8e94ae5fdb5433fcae2961aeb1a8cf17174d6f4a0465d24bf37dd8a038bd439; /usr/share/common-licenses/GFDL-1.2
+:CLOSEST: GFDL-1.2 (31.0%); GFDL-1.3 (31.0%); GPL-1 (31.0%)
+:NAME_AGREES: no
+:STARTS: this file is licensed under the terms of the gnu general public
+:END:
+Observed: 29 words after setting aside 0 copyright-holder lines; 9 of them lie in 4-word runs that a reference also holds (31.0%).
+Observed: GFDL-1.2 covers 31.0% of the stanza alone and adds 9 words here; the longest run it shares with the stanza is 6 words.
+Observed: 14 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-2: this file
+words 14-22: with the one additional provision that ian jacksons name
+words 27-29: from the file
+#+END_EXAMPLE
+** stanza 4
+:PROPERTIES:
+:STANZA: 4
+:KIND: dep5
+:NAME: efaq.texi license
+:LINES: 101-120
+:WORDS: 141
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 2.8% of the words matched
+:COVERED_WORDS: 4
+:OUTSIDE_THE_MATCH_WORDS: 137
+:NOT_IN_ANY_REFERENCE_WORDS: 137
+:GAP_KIND: partial-text
+:BEST: CC-BY-3.0 (DEP-5 paragraph)
+:COMPONENT_1: CC-BY-3.0 (DEP-5 paragraph); alone 2.8%; adds 4 words; tied with 4 others that add as many (CC-BY-SA-3.0 (DEP-5 paragraph), MPL-1.1 (DEP-5 paragraph), MPL-1.1, MPL-1.1+ (DEP-5 paragraph)); longest shared run 4 words; sha256 5fd442a14a325538ee1bcc5a9a232d0ee9febeecbff86b8b4701bc6b8fe840e0; /usr/share/doc/jq/copyright
+:CLOSEST: CC-BY-3.0 (DEP-5 paragraph) (2.8%); CC-BY-SA-3.0 (DEP-5 paragraph) (2.8%); MPL-1.1 (DEP-5 paragraph) (2.8%)
+:NAME_AGREES: no
+:STARTS: this list of frequently asked questions about gnu emacs with answers faq
+:END:
+Observed: 141 words after setting aside 0 copyright-holder lines; 4 of them lie in 4-word runs that a reference also holds (2.8%).
+Observed: CC-BY-3.0 (DEP-5 paragraph) covers 2.8% of the stanza alone and adds 4 words here; the longest run it shares with the stanza is 4 words.
+Observed: 137 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-49: this list of frequently asked questions about gnu emacs with answers faq may be translated into other languages transformed into other formats e g texinfo info www wais and updated with new information the same conditions apply to any derivative of the faq as apply to the faq itself
+words 54-141: faq must include this notice or an approved translation information on who is currently maintaining the faq and how to contact them including their e mail address and information on where the latest version of the faq is archived including ftp information the faq may be copied and redistributed unde ...
+#+END_EXAMPLE
+** stanza 5
+:PROPERTIES:
+:STANZA: 5
+:KIND: dep5
+:NAME: efaq-w32.texi license
+:LINES: 122-138
+:WORDS: 129
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 3.1% of the words matched
+:COVERED_WORDS: 4
+:OUTSIDE_THE_MATCH_WORDS: 125
+:NOT_IN_ANY_REFERENCE_WORDS: 125
+:GAP_KIND: partial-text
+:BEST: CC-BY-3.0 (DEP-5 paragraph)
+:COMPONENT_1: CC-BY-3.0 (DEP-5 paragraph); alone 3.1%; adds 4 words; tied with 4 others that add as many (CC-BY-SA-3.0 (DEP-5 paragraph), MPL-1.1 (DEP-5 paragraph), MPL-1.1, MPL-1.1+ (DEP-5 paragraph)); longest shared run 4 words; sha256 5fd442a14a325538ee1bcc5a9a232d0ee9febeecbff86b8b4701bc6b8fe840e0; /usr/share/doc/jq/copyright
+:CLOSEST: CC-BY-3.0 (DEP-5 paragraph) (3.1%); CC-BY-SA-3.0 (DEP-5 paragraph) (3.1%); MPL-1.1 (DEP-5 paragraph) (3.1%)
+:NAME_AGREES: no
+:STARTS: this list of frequently asked questions about gnu emacs on ms windows
+:END:
+Observed: 129 words after setting aside 0 copyright-holder lines; 4 of them lie in 4-word runs that a reference also holds (3.1%).
+Observed: CC-BY-3.0 (DEP-5 paragraph) covers 3.1% of the stanza alone and adds 4 words here; the longest run it shares with the stanza is 4 words.
+Observed: 125 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-51: this list of frequently asked questions about gnu emacs on ms windows with answers faq may be translated into other languages transformed into other formats e g texinfo info www and updated with new information the same conditions apply to any derivative of the faq as apply to the faq itself
+words 56-129: faq must include this notice or an approved translation information on who is currently maintaining the faq and how to contact them including their e mail address and information on where the latest version of the faq is archived including ftp information the faq may be copied and redistributed unde ...
+#+END_EXAMPLE
+** stanza 6
+:PROPERTIES:
+:STANZA: 6
+:KIND: dep5
+:NAME: same as corresponding file in /etc/images
+:LINES: 296-300
+:WORDS: 29
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 13.7% of the words matched
+:COVERED_WORDS: 4
+:OUTSIDE_THE_MATCH_WORDS: 25
+:NOT_IN_ANY_REFERENCE_WORDS: 25
+:GAP_KIND: partial-text
+:BEST: MPL-1.1 (DEP-5 paragraph)
+:COMPONENT_1: MPL-1.1 (DEP-5 paragraph); alone 13.7%; adds 4 words; tied with 2 others that add as many (MPL-1.1, MPL-1.1+ (DEP-5 paragraph)); longest shared run 4 words; sha256 cc33fe1a42078504c080c8270e2a7993858ec43a2733a0815961baab0399a20d; /usr/share/doc/libtag1v5-vanilla/copyright
+:CLOSEST: MPL-1.1 (DEP-5 paragraph) (13.7%); MPL-1.1 (13.7%); MPL-1.1+ (DEP-5 paragraph) (13.7%)
+:NAME_AGREES: no
+:STARTS: the images in the low color subdirectory are low color versions of
+:END:
+Observed: 29 words after setting aside 0 copyright-holder lines; 4 of them lie in 4-word runs that a reference also holds (13.7%).
+Observed: MPL-1.1 (DEP-5 paragraph) covers 13.7% of the stanza alone and adds 4 words here; the longest run it shares with the stanza is 4 words.
+Observed: 25 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-23: the images in the low color subdirectory are low color versions of the files of the same name in etc images directory and
+words 28-29: same conditions
+#+END_EXAMPLE
+** stanza 7
+:PROPERTIES:
+:STANZA: 7
+:KIND: dep5
+:LINES: 356-389
+:WORDS: 268
+:HOLDER_LINES_SET_ASIDE: 1
+:BAND: gap
+:CONFIDENCE: 16.0% of the words matched
+:COVERED_WORDS: 43
+:OUTSIDE_THE_MATCH_WORDS: 225
+:NOT_IN_ANY_REFERENCE_WORDS: 207
+:GAP_KIND: partial-text
+:BEST: CC-BY-SA-3.0 (DEP-5 paragraph)
+:COMPONENT_1: CC-BY-SA-3.0 (DEP-5 paragraph); alone 9.7%; adds 26 words; longest shared run 5 words; sha256 bf3340476b29cf7a0c050e100ff75f6ce1ca7a98d40a160cb9b663a77bc2b757; /usr/share/doc/gir1.2-girepository-2.0/copyright
+:COMPONENT_2: GPL-1; alone 8.2%; adds 17 words; tied with 1 other that adds as many (GPL-2); longest shared run 8 words; sha256 d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912; /usr/share/common-licenses/GPL-1
+:CLOSEST: CC-BY-SA-3.0 (DEP-5 paragraph) (9.7%); LGPL-2 (9.3%); LGPL-2.1 (9.3%)
+:STARTS: open document format for office applications opendocument version 1 2 oasis standard
+:END:
+Observed: 268 words after setting aside 1 copyright-holder lines; 43 of them lie in 4-word runs that a reference also holds (16.0%).
+Observed: CC-BY-SA-3.0 (DEP-5 paragraph) covers 9.7% of the stanza alone and adds 26 words here; the longest run it shares with the stanza is 5 words.
+Observed: GPL-1 covers 8.2% of the stanza alone and adds 17 words here; the longest run it shares with the stanza is 8 words.
+Observed: 207 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-98: open document format for office applications opendocument version 1 2 oasis standard 29 september 2011 manifest relax ng schema source http docs oasis open org office v1 2 os all capitalized terms in the following text have the meanings assigned to them in the oasis intellectual property rights poli ...
+words 104-108: without restriction of any kind
+words 117-122: section are included on all such
+words 127-130: however this document itself
+words 135-140: in any way including by removing
+words 145-150: references to oasis except as needed
+words 155-165: developing any document or deliverable produced by an oasis technical committee
+words 170-223: rules applicable to copyrights as set forth in the oasis ipr policy must be followed or as required to translate it into languages other than english the limited permissions granted above are perpetual and will not be revoked by oasis or its successors or assigns this document and the information co ...
+words 229-233: and oasis disclaims all warranties
+words 242-243: any warranty
+words 249-258: information herein will not infringe any ownership rights or any
+#+END_EXAMPLE
+** stanza 8
+:PROPERTIES:
+:STANZA: 8
+:KIND: dep5
+:LINES: 391-422
+:WORDS: 266
+:HOLDER_LINES_SET_ASIDE: 1
+:BAND: gap
+:CONFIDENCE: 16.1% of the words matched
+:COVERED_WORDS: 43
+:OUTSIDE_THE_MATCH_WORDS: 223
+:NOT_IN_ANY_REFERENCE_WORDS: 205
+:GAP_KIND: partial-text
+:BEST: CC-BY-SA-3.0 (DEP-5 paragraph)
+:COMPONENT_1: CC-BY-SA-3.0 (DEP-5 paragraph); alone 9.7%; adds 26 words; longest shared run 5 words; sha256 bf3340476b29cf7a0c050e100ff75f6ce1ca7a98d40a160cb9b663a77bc2b757; /usr/share/doc/gir1.2-girepository-2.0/copyright
+:COMPONENT_2: GPL-1; alone 8.2%; adds 17 words; tied with 1 other that adds as many (GPL-2); longest shared run 8 words; sha256 d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912; /usr/share/common-licenses/GPL-1
+:CLOSEST: CC-BY-SA-3.0 (DEP-5 paragraph) (9.7%); LGPL-2 (9.3%); LGPL-2.1 (9.3%)
+:STARTS: open document format for office applications opendocument version 1 3 oasis standard
+:END:
+Observed: 266 words after setting aside 1 copyright-holder lines; 43 of them lie in 4-word runs that a reference also holds (16.1%).
+Observed: CC-BY-SA-3.0 (DEP-5 paragraph) covers 9.7% of the stanza alone and adds 26 words here; the longest run it shares with the stanza is 5 words.
+Observed: GPL-1 covers 8.2% of the stanza alone and adds 17 words here; the longest run it shares with the stanza is 8 words.
+Observed: 205 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-96: open document format for office applications opendocument version 1 3 oasis standard in progress relax ng schema source https tools oasis open org version control svn office all capitalized terms in the following text have the meanings assigned to them in the oasis intellectual property rights polic ...
+words 102-106: without restriction of any kind
+words 115-120: section are included on all such
+words 125-128: however this document itself
+words 133-138: in any way including by removing
+words 143-148: references to oasis except as needed
+words 153-163: developing any document or deliverable produced by an oasis technical committee
+words 168-221: rules applicable to copyrights as set forth in the oasis ipr policy must be followed or as required to translate it into languages other than english the limited permissions granted above are perpetual and will not be revoked by oasis or its successors or assigns this document and the information co ...
+words 227-231: and oasis disclaims all warranties
+words 240-241: any warranty
+words 247-256: information herein will not infringe any ownership rights or any
+#+END_EXAMPLE
+** stanza 9
+:PROPERTIES:
+:STANZA: 9
+:KIND: dep5
+:NAME: meese.el license
+:LINES: 424-429
+:WORDS: 26
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 19.2% of the words matched
+:COVERED_WORDS: 5
+:OUTSIDE_THE_MATCH_WORDS: 21
+:NOT_IN_ANY_REFERENCE_WORDS: 21
+:GAP_KIND: partial-text
+:BEST: public-domain (DEP-5 paragraph)
+:COMPONENT_1: public-domain (DEP-5 paragraph); alone 19.2%; adds 5 words; longest shared run 5 words; sha256 b2680655a7a3be1fbcd60f06dbb380821771e5bf42ae806e4b696ebc7e59da17; /usr/share/doc/bsdutils/copyright
+:CLOSEST: public-domain (DEP-5 paragraph) (19.2%); Artistic (15.3%)
+:NAME_AGREES: no
+:STARTS: this is in the public domain on account of being distributed since
+:END:
+Observed: 26 words after setting aside 0 copyright-holder lines; 5 of them lie in 4-word runs that a reference also holds (19.2%).
+Observed: public-domain (DEP-5 paragraph) covers 19.2% of the stanza alone and adds 5 words here; the longest run it shares with the stanza is 5 words.
+Observed: 21 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-1: this
+words 7-26: on account of being distributed since 1985 or 1986 without a copyright notice this file is part of gnu emacs
+#+END_EXAMPLE
+** stanza 10
+:PROPERTIES:
+:STANZA: 10
+:KIND: dep5
+:NAME: gnulib-comp.m4 license
+:LINES: 431-449
+:WORDS: 143
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 75.5% of the words matched
+:COVERED_WORDS: 108
+:OUTSIDE_THE_MATCH_WORDS: 35
+:NOT_IN_ANY_REFERENCE_WORDS: 26
+:GAP_KIND: partial-text
+:BEST: LGPL-2.1
+:COMPONENT_1: LGPL-2.1; alone 75.5%; adds 108 words; longest shared run 30 words; sha256 dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551; /usr/share/common-licenses/LGPL-2.1
+:CLOSEST: LGPL-2.1 (75.5%); LGPL-2 (74.8%); GPL-3 (73.4%)
+:NAME_AGREES: no
+:STARTS: this file is free software you can redistribute it and or modify
+:END:
+Observed: 143 words after setting aside 0 copyright-holder lines; 108 of them lie in 4-word runs that a reference also holds (75.5%).
+Observed: LGPL-2.1 covers 75.5% of the stanza alone and adds 108 words here; the longest run it shares with the stanza is 30 words.
+Observed: 26 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-2: this file
+words 44-44: file
+words 96-100: file if not see http
+words 109-109: to
+words 127-143: a configuration script generated by autoconf under the same distribution terms as the rest of that program
+#+END_EXAMPLE
+** stanza 11
+:PROPERTIES:
+:STANZA: 11
+:KIND: dep5
+:NAME: pkg.m4 license
+:LINES: 451-472
+:WORDS: 161
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 78.8% of the words matched
+:COVERED_WORDS: 127
+:OUTSIDE_THE_MATCH_WORDS: 34
+:NOT_IN_ANY_REFERENCE_WORDS: 22
+:GAP_KIND: partial-text
+:BEST: GPL-2
+:COMPONENT_1: GPL-2; alone 78.8%; adds 127 words; longest shared run 107 words; sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643; /usr/share/common-licenses/GPL-2
+:CLOSEST: GPL-2 (78.8%); LGPL-2 (78.2%); LGPL-2.1 (78.2%)
+:NAME_AGREES: no
+:STARTS: this program is free software you can redistribute it and or modify
+:END:
+Observed: 161 words after setting aside 0 copyright-holder lines; 127 of them lie in 4-word runs that a reference also holds (78.8%).
+Observed: GPL-2 covers 78.8% of the stanza alone and adds 127 words here; the longest run it shares with the stanza is 107 words.
+Observed: 22 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 120-120: to
+words 129-129: this
+words 138-146: a configuration script generated by autoconf you may include
+words 151-161: distribution terms that you use for the rest of that program
+#+END_EXAMPLE
+** stanza 12
+:PROPERTIES:
+:STANZA: 12
+:KIND: dep5
+:NAME: m4 license
+:LINES: 474-478
+:WORDS: 29
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 27.5% of the words matched
+:COVERED_WORDS: 8
+:OUTSIDE_THE_MATCH_WORDS: 21
+:NOT_IN_ANY_REFERENCE_WORDS: 20
+:GAP_KIND: partial-text
+:BEST: GFDL-1.2
+:COMPONENT_1: GFDL-1.2; alone 27.5%; adds 8 words; tied with 2 others that add as many (GFDL-1.3, GPL-1); longest shared run 4 words; sha256 d8e94ae5fdb5433fcae2961aeb1a8cf17174d6f4a0465d24bf37dd8a038bd439; /usr/share/common-licenses/GFDL-1.2
+:CLOSEST: GFDL-1.2 (27.5%); GFDL-1.3 (27.5%); GPL-1 (27.5%)
+:NAME_AGREES: no
+:STARTS: this file is free software the free software foundation gives unlimited permission
+:END:
+Observed: 29 words after setting aside 0 copyright-holder lines; 8 of them lie in 4-word runs that a reference also holds (27.5%).
+Observed: GFDL-1.2 covers 27.5% of the stanza alone and adds 8 words here; the longest run it shares with the stanza is 4 words.
+Observed: 20 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-5: this file is free software
+words 10-17: gives unlimited permission to copy and or distribute
+words 23-29: as long as this notice is preserved
+#+END_EXAMPLE
+** stanza 13
+:PROPERTIES:
+:STANZA: 13
+:KIND: dep5
+:NAME: sedadmin.inp license
+:LINES: 480-490
+:WORDS: 67
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 55.2% of the words matched
+:COVERED_WORDS: 37
+:OUTSIDE_THE_MATCH_WORDS: 30
+:NOT_IN_ANY_REFERENCE_WORDS: 28
+:GAP_KIND: partial-text
+:BEST: GPL-1
+:COMPONENT_1: GPL-1; alone 55.2%; adds 37 words; longest shared run 29 words; sha256 d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912; /usr/share/common-licenses/GPL-1
+:CLOSEST: GPL-1 (55.2%); GPL-2 (50.7%); LGPL-2 (47.7%)
+:NAME_AGREES: no
+:STARTS: this file is part of gnu emacs this file is free software
+:END:
+Observed: 67 words after setting aside 0 copyright-holder lines; 37 of them lie in 4-word runs that a reference also holds (55.2%).
+Observed: GPL-1 covers 55.2% of the stanza alone and adds 37 words here; the longest run it shares with the stanza is 29 words.
+Observed: 28 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-12: this file is part of gnu emacs this file is free software
+words 18-26: author gives unlimited permission to copy and or distribute
+words 32-38: as long as this notice is preserved
+#+END_EXAMPLE
+** stanza 14
+:PROPERTIES:
+:STANZA: 14
+:KIND: dep5
+:NAME: nt/inc/dirent.h license
+:LINES: 492-496
+:WORDS: 17
+:HOLDER_LINES_SET_ASIDE: 1
+:BAND: gap
+:CONFIDENCE: 0.0% of the words matched
+:COVERED_WORDS: 0
+:OUTSIDE_THE_MATCH_WORDS: 17
+:NOT_IN_ANY_REFERENCE_WORDS: 17
+:GAP_KIND: no-reference
+:STARTS: the code here is forced by the interface and is not subject
+:END:
+Observed: 17 words after setting aside 1 copyright-holder lines; 0 of them lie in 4-word runs that a reference also holds (0.0%).
+Observed: 17 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind no-reference: the stanza mentions licensing but shares no 4-word run with any reference held on this host.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-17: the code here is forced by the interface and is not subject to algorithm in this format
+#+END_EXAMPLE
+** stanza 15
+:PROPERTIES:
+:STANZA: 15
+:KIND: dep5
+:LINES: 498-507
+:WORDS: 66
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 60.6% of the words matched
+:COVERED_WORDS: 40
+:OUTSIDE_THE_MATCH_WORDS: 26
+:NOT_IN_ANY_REFERENCE_WORDS: 24
+:GAP_KIND: partial-text
+:BEST: GPL-1
+:COMPONENT_1: GPL-1; alone 60.6%; adds 40 words; longest shared run 14 words; sha256 d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912; /usr/share/common-licenses/GPL-1
+:CLOSEST: GPL-1 (60.6%); GPL-2 (56.0%); LGPL-2 (56.0%)
+:STARTS: this file is free software as a special exception the author gives
+:END:
+Observed: 66 words after setting aside 0 copyright-holder lines; 40 of them lie in 4-word runs that a reference also holds (60.6%).
+Observed: GPL-1 covers 60.6% of the stanza alone and adds 40 words here; the longest run it shares with the stanza is 14 words.
+Observed: 24 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-5: this file is free software
+words 11-19: author gives unlimited permission to copy and or distribute
+words 25-33: as long as this notice is preserved this file
+words 53-53: law
+#+END_EXAMPLE
+** stanza 16
+:PROPERTIES:
+:STANZA: 16
+:KIND: dep5
+:LINES: 521-545
+:WORDS: 214
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 53.2% of the words matched
+:COVERED_WORDS: 114
+:OUTSIDE_THE_MATCH_WORDS: 100
+:NOT_IN_ANY_REFERENCE_WORDS: 73
+:GAP_KIND: partial-text
+:BEST: Expat (DEP-5 paragraph)
+:COMPONENT_1: Expat (DEP-5 paragraph); alone 53.2%; adds 114 words; longest shared run 28 words; sha256 d6ab49c37015ea3263f730f8cadb52445cde82bea3e73ed58efb90481f3e00e8; /usr/share/doc/age/copyright
+:CLOSEST: Expat (DEP-5 paragraph) (53.2%); GPL-3 (19.1%); GPL-2 (17.2%)
+:STARTS: boost software license version 1 0 august 17th 2003 permission is hereby
+:END:
+Observed: 214 words after setting aside 0 copyright-holder lines; 114 of them lie in 4-word runs that a reference also holds (53.2%).
+Observed: Expat (DEP-5 paragraph) covers 53.2% of the stanza alone and adds 114 words here; the longest run it shares with the stanza is 28 words.
+Observed: 73 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-9: boost software license version 1 0 august 17th 2003
+words 20-21: or organization
+words 29-30: accompanying documentation
+words 35-44: the software to use reproduce display distribute execute and transmit
+words 58-59: third parties
+words 69-69: all
+words 74-90: the copyright notices in the software and this entire statement including the above license grant this restriction
+words 110-110: all
+words 115-123: software unless such copies or derivative works are solely
+words 128-137: machine executable object code generated by a source language processor
+words 166-169: title and non infringement
+words 176-181: holders or anyone distributing the software
+#+END_EXAMPLE
+** stanza 17
+:PROPERTIES:
+:STANZA: 17
+:KIND: dep5
+:LINES: 547-600
+:WORDS: 342
+:HOLDER_LINES_SET_ASIDE: 1
+:BAND: gap
+:CONFIDENCE: 22.8% of the words matched
+:COVERED_WORDS: 78
+:OUTSIDE_THE_MATCH_WORDS: 264
+:NOT_IN_ANY_REFERENCE_WORDS: 252
+:GAP_KIND: partial-text
+:BEST: Zlib (DEP-5 paragraph)
+:COMPONENT_1: Zlib (DEP-5 paragraph); alone 13.7%; adds 47 words; longest shared run 17 words; sha256 5913fa42f94d4e754217bcb667447ea2c2c05342535b6ea536edb253f36bb498; /usr/share/doc/cmake-data/copyright
+:COMPONENT_2: GPL-3; alone 9.0%; adds 31 words; longest shared run 27 words; sha256 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986; /usr/share/common-licenses/GPL-3
+:CLOSEST: Zlib (DEP-5 paragraph) (13.7%); GPL-3 (9.0%); GPL-1 (7.8%)
+:STARTS: pcre licence pcre is a library of functions to support regular expressions
+:END:
+Observed: 342 words after setting aside 1 copyright-holder lines; 78 of them lie in 4-word runs that a reference also holds (22.8%).
+Observed: Zlib (DEP-5 paragraph) covers 13.7% of the stanza alone and adds 47 words here; the longest run it shares with the stanza is 17 words.
+Observed: GPL-3 covers 9.0% of the stanza alone and adds 31 words here; the longest run it shares with the stanza is 27 words.
+Observed: 252 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-47: pcre licence pcre is a library of functions to support regular expressions whose syntax and semantics are as close as possible to those of the perl 5 language written by philip hazel ph10 cam ac uk university of cambridge computing service cambridge england phone 44 1223 334714
+words 60-65: on any computer system and to
+words 75-76: this software
+words 104-104: 2
+words 114-149: either by explicit claim or by omission in practice this means that if you use pcre in software that you distribute to others commercially or otherwise you must put a sentence like this regular expression support
+words 154-167: pcre library package which is open source software written by philip hazel and copyright
+words 172-222: cambridge england somewhere reasonably visible in your documentation and in any relevant files or online help data or similar a reference to the ftp site for the source that is to ftp ftp csx cam ac uk pub software programming pcre should also be given in the documentation however this condition
+words 227-266: apply to whole chains of software if package a includes pcre it must acknowledge it but if package b is software that includes package a the condition is not imposed on package b unless it uses pcre independently 3 altered
+words 284-308: 4 if pcre is embedded in any software that is released under the gnu general purpose licence gpl or lesser general purpose licence lgpl then
+words 313-342: licence shall supersede any condition above with which it is incompatible the documentation for pcre supplied in the doc directory is distributed under the same terms as the software itself
+#+END_EXAMPLE
+** stanza 18
+:PROPERTIES:
+:STANZA: 18
+:KIND: dep5
+:NAME: manpage license
+:LINES: 977-990
+:WORDS: 101
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 38.6% of the words matched
+:COVERED_WORDS: 39
+:OUTSIDE_THE_MATCH_WORDS: 62
+:NOT_IN_ANY_REFERENCE_WORDS: 51
+:GAP_KIND: partial-text
+:BEST: GFDL-1.2
+:COMPONENT_1: GFDL-1.2; alone 38.6%; adds 39 words; tied with 1 other that adds as many (GFDL-1.3); longest shared run 6 words; sha256 d8e94ae5fdb5433fcae2961aeb1a8cf17174d6f4a0465d24bf37dd8a038bd439; /usr/share/common-licenses/GFDL-1.2
+:CLOSEST: GFDL-1.2 (38.6%); GFDL-1.3 (38.6%); GFDL-1.3+ (DEP-5 paragraph) (26.7%)
+:NAME_AGREES: no
+:STARTS: permission is granted to make and distribute verbatim copies of this document
+:END:
+Observed: 101 words after setting aside 0 copyright-holder lines; 39 of them lie in 4-word runs that a reference also holds (38.6%).
+Observed: GFDL-1.2 covers 38.6% of the stanza alone and adds 39 words here; the longest run it shares with the stanza is 6 words.
+Observed: 51 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 5-5: make
+words 12-14: document provided the
+words 21-25: are preserved on all copies
+words 33-35: modified versions of
+words 41-51: for verbatim copying provided that the entire resulting derived work is
+words 58-63: permission notice identical to this one
+words 71-89: translations of this document into another language under the above conditions for modified versions except that this permission notice
+words 94-96: a translation approved
+#+END_EXAMPLE
+** stanza name Creative Commons Attribution-ShareAlike 3.0 License
+:PROPERTIES:
+:KIND: dep5
+:NAME: Creative Commons Attribution-ShareAlike 3.0 License
+:LINES: 348-348
+:BAND: gap
+:GAP_KIND: name-without-text
+:END:
+Observed: the name Creative Commons Attribution-ShareAlike 3.0 License is not one of the standard short names, and no License: paragraph of this file carries a text under it.
+Judged: a gap of kind name-without-text: there are no words of its own to compare, so nothing is scored.

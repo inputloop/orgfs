@@ -1,0 +1,13 @@
+* reference CC0-1.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: CC0-1.0-4eb1704c.org
+:NAME: CC0-1.0
+:PATH: /usr/share/doc/libqt5core5t64/copyright
+:SHA256: 4eb1704cfbc4061f2561227149d482d1992604181f3a4a4d93147af69281ec09
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/libqt5core5t64/copyright (held by 6 packages)
+:WORDS: 1072
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference CC0-1.0, read on vm, is the text at /usr/share/doc/libqt5core5t64/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/libqt5core5t64/copyright (held by 6 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

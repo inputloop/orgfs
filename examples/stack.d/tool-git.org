@@ -1,0 +1,108 @@
+* git :SEEN_HERE:
+:PROPERTIES:
+:ORGFS_ATOM: tool-git.org
+:ROLE: stack-tool
+:TOOL: git
+:READ_AT: 2026-11-08T07:20:49Z
+:READ_ON: vm
+:READ_ENV: Linux 6.18.44-fc-v310; Ubuntu 24.04.5 LTS
+:PRESENT: yes
+:COMMAND_PATH: /usr/bin/git
+:RESOLVED_PATH: /usr/bin/git
+:VERSION: git version 2.43.0
+:VERSION_TEXT_SHA256: 7bcef2bc53fd4956d254fd9a172fc587d0afd9e0e4ade503760f03cde3d2f897
+:PACKAGE: git
+:PACKAGE_VERSION: 1:2.43.0-1ubuntu7.4
+:SOURCE_PACKAGE: git
+:UPSTREAM_VERSION: 2.43.0
+:HOMEPAGE: https://git-scm.com/
+:COPYRIGHT_PATH: /usr/share/doc/git/copyright
+:LICENSES: GPL-2; BSD-3-clause; Zlib; LGPL-2.1+; EDL-1.0; GPL-2+; Expat; GPL-1+ or Artistic-1; ISC; mingw-runtime; Boost; dlmalloc; Apache-2.0; LGPL-2+
+:REGISTER_ROW: git (line 8 of share/licensing.tsv)
+:END:
+Observed on vm at 2026-11-08T07:20:49Z: git is at /usr/bin/git. The commands below were run and printed what is quoted.
+
+#+BEGIN_EXAMPLE
+$ git --version
+git version 2.43.0
+#+END_EXAMPLE
+
+Observed: Debian names the owner of that file as package git, version 1:2.43.0-1ubuntu7.4, built from source package git; the upstream version derived from it (epoch and the last hyphen-part dropped) is 2.43.0.
+
+#+BEGIN_EXAMPLE
+$ dpkg-query -S /usr/bin/git
+git: /usr/bin/git
+$ dpkg-query -W -f '${Package}|${Version}|${Source}|${Architecture}|${Homepage}\n' git
+git|1:2.43.0-1ubuntu7.4||amd64|https://git-scm.com/
+#+END_EXAMPLE
+
+Observed: the distinct License: lines of /usr/share/doc/git/copyright, in file order, are quoted here. They are what the file says; this tool does not say whether they are right or how they combine.
+
+#+BEGIN_EXAMPLE
+License: GPL-2
+License: BSD-3-clause
+License: Zlib
+License: LGPL-2.1+
+License: EDL-1.0
+License: GPL-2+
+License: Expat
+License: GPL-1+ or Artistic-1
+License: ISC
+License: mingw-runtime
+License: Boost
+License: dlmalloc
+License: Apache-2.0
+License: LGPL-2+
+#+END_EXAMPLE
+
+Observed: share/licensing.tsv, the register the licensing page is made from, has a row for git (line 8) that reads: GPL-2.0-only (some files LGPL-2.1-or-later or permissive). It is a different source from the copyright file above, and this tool does not say whether the two agree.
+
+Judged: nothing here. The facts above are copied from the commands and files named, and the gaps say what was not read.
+
+** licence guess
+:PROPERTIES:
+:ROLE: licence-guess
+:PACKAGE: git
+:IN_EFFECT: machine guess
+:GUESS_CURRENT: guesses/git/20261108T072049Z-shingle4-containment-v1.org
+:GUESS_HISTORY: guesses/git/ (1 guess)
+:CORRECTIONS_APPROVED: 0
+:CORRECTIONS_PROPOSED: 0
+:END:
+Observed: the machine guess is guesses/git/20261108T072049Z-shingle4-containment-v1.org, made 2026-11-08T07:20:49Z by shingle4-containment version 1 from /usr/share/doc/git/copyright (sha256 e7efbd67e2dac6d950e4607b541778a610561ec77562b8b0a9704a7a3fcbc39c): stanza 1: GPL-3 (gap); stanza 2: BSD [tied with 2] (high); stanza 3: GPL-1 [tied with 12] (gap); stanza 4: Expat (DEP-5 paragraph) (gap); stanza 5: Expat (DEP-5 paragraph) (gap).
+Observed: 38 paragraphs carry only standard short names (GPL-2; BSD-3-clause; Zlib; LGPL-2.1+; GPL-2+; Expat; ISC; Apache-2.0; LGPL-2+), taken as stated and not scored.
+- stanza 1 (lines 136-150, 83 words, named GPL-1+ or Artistic-1): a gap, 55.4% of the words matched; matches GPL-3; a gap of kind partial-text; closest GPL-3 (55.4%); GPL-1 (54.2%); GPL-2 (53.0%)
+- stanza 2 (lines 356-386, 206 words, named EDL-1.0): high confidence, 96.6% of the words matched; matches BSD
+- stanza 3 (lines 388-397, 80 words, named mingw-runtime): a gap, 27.5% of the words matched; matches GPL-1; a gap of kind partial-text; closest GPL-1 (27.5%); GPL-2 (DEP-5 paragraph) (27.5%); GPL-2 (27.5%)
+- stanza 4 (lines 399-426, 248 words, named Boost): a gap, 54.0% of the words matched; matches Expat (DEP-5 paragraph), GFDL-1.3; a gap of kind partial-text; closest Expat (DEP-5 paragraph) (45.9%); GPL-3 (16.5%); GPL-2 (14.9%)
+- stanza 5 (lines 428-459, 245 words, named dlmalloc): a gap, 66.5% of the words matched; matches Expat (DEP-5 paragraph); a gap of kind partial-text; closest Expat (DEP-5 paragraph) (66.5%); ISC (DEP-5 paragraph) (16.3%); GPL-3 (13.4%)
+Judged: the band edges are 4 9 17 (house numbers, invented), not measured; method shingle4-containment version 1. The guess atom lists, for each stanza, the words that matched no reference.
+Observed: this is the only guess so far for this package; a later one will be linked to it by PREVIOUS and NEXT.
+To offer a correction: tell the project by an issue or by mail; a maintainer records it with  orgfs stack correct git --says LICENCE --by NAME --why REASON  and a different person approves it with  orgfs stack approve CORRECTION --by NAME.
+
+** gap stack-git-vcs
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-git-vcs
+:WHAT_KIND: vcs-url
+:WHAT_SHAPE: the Vcs-Git URL and the upstream tag of the source package
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: not read: dpkg-query -W -f offers only the fields in the status database, and Vcs-Git is not one
+:WHY: the source package's own metadata is not on this box and no network is used
+:REACH: anyone with the source package index or the upstream project
+:ROUTE: apt-cache showsrc git (the Vcs- lines), after apt-get update where the source indices are missing
+:END:
+** gap stack-git-commits
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-git-commits
+:WHAT_KIND: commits
+:WHAT_SHAPE: the commits that make this version distinct
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: NOT CHECKED (needs the upstream tree; intake is a later slice)
+:WHY: that needs the upstream tree, which this slice does not fetch
+:REACH: anyone who can clone the upstream tree
+:ROUTE: a later intake slice: clone the upstream tree at the version's tag and run orgfs who on it
+:END:

@@ -1,0 +1,135 @@
+* guess busybox :GUESS:
+:PROPERTIES:
+:ORGFS_GUESS: guesses/busybox/20261108T072049Z-shingle4-containment-v1.org
+:PACKAGE: busybox
+:METHOD: shingle4-containment
+:METHOD_VERSION: 1
+:SHINGLE_WORDS: 4
+:MIN_STANZA_WORDS: 12
+:BAND_PERCENTS: 4 9 17 (house numbers, invented)
+:MADE_AT: 2026-11-08T07:20:49Z
+:MADE_ON: vm
+:FILE_READ: /usr/share/doc/busybox/copyright
+:FILE_SHA256: 336d995e819d3a7a3fdbf3f5041c07094f75ee849acb3bb742b7503d45786329
+:REFERENCE_SET_SHA256: d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01
+:REFERENCES_USED: 40
+:INPUTS_KEY: d8646ff8d286d695d6e2f77bd880d222751fee05292d47fa46ed655f40efdf71
+:FORMAT: free-text
+:STANDARD_STANZAS_NOT_SCORED: 
+:STANDARD_NAMES: 
+:STANZAS_SCORED: 4
+:PROSE_BLOCKS_SET_ASIDE: 2
+:SHORT_BLOCKS_SET_ASIDE: 3
+:NAME_GAPS: 0
+:SUMMARY: stanza 3: LGPL-2 (DEP-5 paragraph) (low); stanza 4: GPL-1 [tied with 12] (moderate); stanza 5: GPL-1 [tied with 1] (high); stanza 6: GPL-3 (gap)
+:PREVIOUS: none
+:END:
+Observed: orgfs stack (orgfs 0.5.0-dev) made this guess on 2026-11-08T07:20:49Z on vm from the free-text copyright file /usr/share/doc/busybox/copyright (sha256 336d995e819d3a7a3fdbf3f5041c07094f75ee849acb3bb742b7503d45786329), against the reference set d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01 (40 references; atoms in references/). The method is shingle4-containment, version 1. No network call and no model call was made.
+Judged: nothing in this guess is a finding about the law. It says how much of the wording of the file also stands in a text the host already holds in a machine-readable form.
+** stanza 3
+:PROPERTIES:
+:STANZA: 3
+:KIND: free
+:LINES: 13-15
+:WORDS: 34
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: low
+:CONFIDENCE: 85.2% of the words matched
+:COVERED_WORDS: 29
+:OUTSIDE_THE_MATCH_WORDS: 5
+:NOT_IN_ANY_REFERENCE_WORDS: 5
+:BEST: LGPL-2 (DEP-5 paragraph)
+:COMPONENT_1: LGPL-2 (DEP-5 paragraph); alone 85.2%; adds 29 words; longest shared run 17 words; sha256 6a7f53c1c7be7cee6ffba328de32feeedb949dcd918e5de6e21ea6f3e77dc5a3; /usr/share/doc/e2fsprogs/copyright
+:CLOSEST: LGPL-2 (DEP-5 paragraph) (85.2%); GPL-1 (79.4%); GPL-2 (DEP-5 paragraph) (79.4%)
+:STARTS: this package is free software you can redistribute it and or modify
+:END:
+Observed: 34 words after setting aside 0 copyright-holder lines; 29 of them lie in 4-word runs that a reference also holds (85.2%).
+Observed: LGPL-2 (DEP-5 paragraph) covers 85.2% of the stanza alone and adds 29 words here; the longest run it shares with the stanza is 17 words.
+Observed: 5 words match no reference at all.
+Judged: low confidence (more than 9 and at most 17 per cent of the words are outside the match). The bands are house numbers (4, 9, 17), invented here, not measured.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-2: this package
+words 32-34: dated june 1991
+#+END_EXAMPLE
+** stanza 4
+:PROPERTIES:
+:STANZA: 4
+:KIND: free
+:LINES: 17-20
+:WORDS: 38
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: moderate
+:CONFIDENCE: 94.7% of the words matched
+:COVERED_WORDS: 36
+:OUTSIDE_THE_MATCH_WORDS: 2
+:NOT_IN_ANY_REFERENCE_WORDS: 2
+:BEST: GPL-1
+:COMPONENT_1: GPL-1; alone 94.7%; adds 36 words; tied with 12 others that add as many (GPL-2 (DEP-5 paragraph), GPL-2, GPL-2+ (DEP-5 paragraph), GPL-3, GPL-3 (DEP-5 paragraph), and more); longest shared run 36 words; sha256 d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912; /usr/share/common-licenses/GPL-1
+:CLOSEST: GPL-1 (94.7%); GPL-2 (DEP-5 paragraph) (94.7%); GPL-2 (94.7%)
+:STARTS: this package is distributed in the hope that it will be useful
+:END:
+Observed: 38 words after setting aside 0 copyright-holder lines; 36 of them lie in 4-word runs that a reference also holds (94.7%).
+Observed: GPL-1 covers 94.7% of the stanza alone and adds 36 words here; the longest run it shares with the stanza is 36 words.
+Observed: 2 words match no reference at all.
+Judged: moderate confidence (more than 4 and at most 9 per cent of the words are outside the match). The bands are house numbers (4, 9, 17), invented here, not measured.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-2: this package
+#+END_EXAMPLE
+** stanza 5
+:PROPERTIES:
+:STANZA: 5
+:KIND: free
+:LINES: 22-25
+:WORDS: 35
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: high
+:CONFIDENCE: 97.1% of the words matched
+:COVERED_WORDS: 34
+:OUTSIDE_THE_MATCH_WORDS: 1
+:NOT_IN_ANY_REFERENCE_WORDS: 0
+:BEST: GPL-1
+:COMPONENT_1: GPL-1; alone 97.1%; adds 34 words; tied with 1 other that adds as many (GPL-3 (DEP-5 paragraph)); longest shared run 15 words; sha256 d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912; /usr/share/common-licenses/GPL-1
+:CLOSEST: GPL-1 (97.1%); GPL-3 (DEP-5 paragraph) (97.1%); GPL-2 (94.2%)
+:STARTS: you should have received a copy of the gnu general public license
+:END:
+Observed: 35 words after setting aside 0 copyright-holder lines; 34 of them lie in 4-word runs that a reference also holds (97.1%).
+Observed: GPL-1 covers 97.1% of the stanza alone and adds 34 words here; the longest run it shares with the stanza is 15 words.
+Observed: 0 words match no reference at all.
+Judged: high confidence (at most 4 per cent of the words are outside the match). The bands are house numbers (4, 9, 17), invented here, not measured.
+** stanza 6
+:PROPERTIES:
+:STANZA: 6
+:KIND: free
+:LINES: 27-28
+:WORDS: 24
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 33.3% of the words matched
+:COVERED_WORDS: 8
+:OUTSIDE_THE_MATCH_WORDS: 16
+:NOT_IN_ANY_REFERENCE_WORDS: 16
+:GAP_KIND: points-at-reference
+:BEST: GPL-3
+:COMPONENT_1: GPL-3; alone 33.3%; adds 8 words; longest shared run 8 words; sha256 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986; /usr/share/common-licenses/GPL-3
+:CLOSEST: GPL-3 (33.3%); GPL-1 (25.0%); GPL-2 (DEP-5 paragraph) (25.0%)
+:CITES: GPL-2
+:CITES_IN_COMPONENTS: no
+:STARTS: on debian gnu linux systems the complete text of the gnu general
+:END:
+Observed: 24 words after setting aside 0 copyright-holder lines; 8 of them lie in 4-word runs that a reference also holds (33.3%).
+Observed: GPL-3 covers 33.3% of the stanza alone and adds 8 words here; the longest run it shares with the stanza is 8 words.
+Observed: 16 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind points-at-reference: the stanza names GPL-2 by path instead of carrying its text. The pointer is observed; the text it points at was not compared with anything the stanza says.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-8: on debian gnu linux systems the complete text
+words 17-24: found in usr share common licenses gpl 2
+#+END_EXAMPLE
+
+Observed: the stanza cites /usr/share/common-licenses/GPL-2 by path.

@@ -1,0 +1,13 @@
+* reference BSD-4-clause :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: BSD-4-clause-85546b6e.org
+:NAME: BSD-4-clause
+:PATH: /usr/share/doc/php8.3-cli/copyright
+:SHA256: 85546b6e32dae9620b3708993195fbbdbd3cdf2a9cde7024618020ba779a401d
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/php8.3-cli/copyright (held by 14 packages)
+:WORDS: 246
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference BSD-4-clause, read on vm, is the text at /usr/share/doc/php8.3-cli/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/php8.3-cli/copyright (held by 14 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

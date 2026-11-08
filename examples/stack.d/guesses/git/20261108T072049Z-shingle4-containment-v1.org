@@ -1,0 +1,203 @@
+* guess git :GUESS:
+:PROPERTIES:
+:ORGFS_GUESS: guesses/git/20261108T072049Z-shingle4-containment-v1.org
+:PACKAGE: git
+:METHOD: shingle4-containment
+:METHOD_VERSION: 1
+:SHINGLE_WORDS: 4
+:MIN_STANZA_WORDS: 12
+:BAND_PERCENTS: 4 9 17 (house numbers, invented)
+:MADE_AT: 2026-11-08T07:20:49Z
+:MADE_ON: vm
+:FILE_READ: /usr/share/doc/git/copyright
+:FILE_SHA256: e7efbd67e2dac6d950e4607b541778a610561ec77562b8b0a9704a7a3fcbc39c
+:REFERENCE_SET_SHA256: d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01
+:REFERENCES_USED: 40
+:INPUTS_KEY: 3fee5a4f2ebc2a3255244873947436f539b7017983fbcbfd522428d6edcdcc03
+:FORMAT: dep5
+:STANDARD_STANZAS_NOT_SCORED: 38
+:STANDARD_NAMES: GPL-2; BSD-3-clause; Zlib; LGPL-2.1+; GPL-2+; Expat; ISC; Apache-2.0; LGPL-2+
+:STANZAS_SCORED: 5
+:PROSE_BLOCKS_SET_ASIDE: 0
+:SHORT_BLOCKS_SET_ASIDE: not applicable
+:NAME_GAPS: 0
+:SUMMARY: stanza 1: GPL-3 (gap); stanza 2: BSD [tied with 2] (high); stanza 3: GPL-1 [tied with 12] (gap); stanza 4: Expat (DEP-5 paragraph) (gap); stanza 5: Expat (DEP-5 paragraph) (gap)
+:PREVIOUS: none
+:END:
+Observed: orgfs stack (orgfs 0.5.0-dev) made this guess on 2026-11-08T07:20:49Z on vm from the dep5 copyright file /usr/share/doc/git/copyright (sha256 e7efbd67e2dac6d950e4607b541778a610561ec77562b8b0a9704a7a3fcbc39c), against the reference set d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01 (40 references; atoms in references/). The method is shingle4-containment, version 1. No network call and no model call was made.
+Observed: 38 paragraphs carry only standard short names (GPL-2; BSD-3-clause; Zlib; LGPL-2.1+; GPL-2+; Expat; ISC; Apache-2.0; LGPL-2+); the file states those in a machine-readable form, so they are taken as stated and not scored.
+Judged: nothing in this guess is a finding about the law. It says how much of the wording of the file also stands in a text the host already holds in a machine-readable form.
+** stanza 1
+:PROPERTIES:
+:STANZA: 1
+:KIND: dep5
+:NAME: GPL-1+ or Artistic-1
+:LINES: 136-150
+:WORDS: 83
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 55.4% of the words matched
+:COVERED_WORDS: 46
+:OUTSIDE_THE_MATCH_WORDS: 37
+:NOT_IN_ANY_REFERENCE_WORDS: 35
+:GAP_KIND: partial-text
+:BEST: GPL-3
+:COMPONENT_1: GPL-3; alone 55.4%; adds 46 words; longest shared run 17 words; sha256 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986; /usr/share/common-licenses/GPL-3
+:CLOSEST: GPL-3 (55.4%); GPL-1 (54.2%); GPL-2 (53.0%)
+:NAME_AGREES: not compared (the name joins several licences)
+:CITES: GPL
+:CITES_IN_COMPONENTS: no
+:STARTS: this program is free software you can redistribute it and or modify
+:END:
+Observed: 83 words after setting aside 0 copyright-holder lines; 46 of them lie in 4-word runs that a reference also holds (55.4%).
+Observed: GPL-3 covers 55.4% of the stanza alone and adds 46 words here; the longest run it shares with the stanza is 17 words.
+Observed: 35 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 19-19: a
+words 42-58: or b the artistic license which comes with perl on debian gnu linux systems the complete text
+words 67-83: found in usr share common licenses gpl and the artistic licence in usr share common licenses artistic
+#+END_EXAMPLE
+
+Observed: the stanza cites /usr/share/common-licenses/GPL by path.
+** stanza 2
+:PROPERTIES:
+:STANZA: 2
+:KIND: dep5
+:NAME: EDL-1.0
+:LINES: 356-386
+:WORDS: 206
+:HOLDER_LINES_SET_ASIDE: 1
+:BAND: high
+:CONFIDENCE: 96.6% of the words matched
+:COVERED_WORDS: 199
+:OUTSIDE_THE_MATCH_WORDS: 7
+:NOT_IN_ANY_REFERENCE_WORDS: 3
+:BEST: BSD
+:COMPONENT_1: BSD; alone 96.6%; adds 199 words; tied with 2 others that add as many (BSD-3-clause (DEP-5 paragraph), BSD-4-clause (DEP-5 paragraph)); longest shared run 73 words; sha256 5d588eb3b157d52112afea935c88a7ff9efddc1e2d95a42c25d3b96ad9055008; /usr/share/common-licenses/BSD
+:CLOSEST: BSD (96.6%); BSD-3-clause (DEP-5 paragraph) (96.6%); BSD-4-clause (DEP-5 paragraph) (96.6%)
+:NAME_AGREES: no
+:STARTS: redistribution and use in source and binary forms with or without modification
+:END:
+Observed: 206 words after setting aside 1 copyright-holder lines; 199 of them lie in 4-word runs that a reference also holds (96.6%).
+Observed: BSD covers 96.6% of the stanza alone and adds 199 words here; the longest run it shares with the stanza is 73 words.
+Observed: 3 words match no reference at all.
+Judged: high confidence (at most 4 per cent of the words are outside the match). The bands are house numbers (4, 9, 17), invented here, not measured.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 65-67: eclipse foundation inc
+#+END_EXAMPLE
+** stanza 3
+:PROPERTIES:
+:STANZA: 3
+:KIND: dep5
+:NAME: mingw-runtime
+:LINES: 388-397
+:WORDS: 80
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 27.5% of the words matched
+:COVERED_WORDS: 22
+:OUTSIDE_THE_MATCH_WORDS: 58
+:NOT_IN_ANY_REFERENCE_WORDS: 48
+:GAP_KIND: partial-text
+:BEST: GPL-1
+:COMPONENT_1: GPL-1; alone 27.5%; adds 22 words; tied with 12 others that add as many (GPL-2 (DEP-5 paragraph), GPL-2, GPL-2+ (DEP-5 paragraph), GPL-3, GPL-3 (DEP-5 paragraph), and more); longest shared run 14 words; sha256 d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912; /usr/share/common-licenses/GPL-1
+:CLOSEST: GPL-1 (27.5%); GPL-2 (DEP-5 paragraph) (27.5%); GPL-2 (27.5%)
+:NAME_AGREES: no
+:STARTS: this file has no copyright assigned and is placed in the public
+:END:
+Observed: 80 words after setting aside 0 copyright-holder lines; 22 of them lie in 4-word runs that a reference also holds (27.5%).
+Observed: GPL-1 covers 27.5% of the stanza alone and adds 22 words here; the longest run it shares with the stanza is 14 words.
+Observed: 48 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-9: this file has no copyright assigned and is placed
+words 14-30: this file is a part of the mingw runtime package the mingw runtime package and its code
+words 45-55: all warranties expressed or implied are hereby disclaimed this includes but
+words 60-60: warranties
+words 71-80: free to use this package and its code without limitation
+#+END_EXAMPLE
+** stanza 4
+:PROPERTIES:
+:STANZA: 4
+:KIND: dep5
+:NAME: Boost
+:LINES: 399-426
+:WORDS: 248
+:HOLDER_LINES_SET_ASIDE: 0
+:BAND: gap
+:CONFIDENCE: 54.0% of the words matched
+:COVERED_WORDS: 134
+:OUTSIDE_THE_MATCH_WORDS: 114
+:NOT_IN_ANY_REFERENCE_WORDS: 97
+:GAP_KIND: partial-text
+:BEST: Expat (DEP-5 paragraph)
+:COMPONENT_1: Expat (DEP-5 paragraph); alone 45.9%; adds 114 words; longest shared run 28 words; sha256 d6ab49c37015ea3263f730f8cadb52445cde82bea3e73ed58efb90481f3e00e8; /usr/share/doc/age/copyright
+:COMPONENT_2: GFDL-1.3; alone 10.4%; adds 20 words; longest shared run 5 words; sha256 110535522396708cea37c72a802c5e7e81391139f5f7985631c93ef242b206a4; /usr/share/common-licenses/GFDL-1.3
+:CLOSEST: Expat (DEP-5 paragraph) (45.9%); GPL-3 (16.5%); GPL-2 (14.9%)
+:NAME_AGREES: no
+:STARTS: it is licensed under the boost software license which basically means you
+:END:
+Observed: 248 words after setting aside 0 copyright-holder lines; 134 of them lie in 4-word runs that a reference also holds (54.0%).
+Observed: Expat (DEP-5 paragraph) covers 45.9% of the stanza alone and adds 114 words here; the longest run it shares with the stanza is 28 words.
+Observed: GFDL-1.3 covers 10.4% of the stanza alone and adds 20 words here; the longest run it shares with the stanza is 5 words.
+Observed: 97 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 6-20: boost software license which basically means you can do anything you like with it this
+words 26-43: malloc c h file which remains copyright to others boost software license version 1 0 august 17th 2003
+words 54-55: or organization
+words 63-64: accompanying documentation
+words 69-78: the software to use reproduce display distribute execute and transmit
+words 92-93: third parties
+words 103-103: all
+words 108-124: the copyright notices in the software and this entire statement including the above license grant this restriction
+words 144-144: all
+words 149-157: software unless such copies or derivative works are solely
+words 162-171: machine executable object code generated by a source language processor
+words 200-203: title and non infringement
+words 210-215: holders or anyone distributing the software
+#+END_EXAMPLE
+** stanza 5
+:PROPERTIES:
+:STANZA: 5
+:KIND: dep5
+:NAME: dlmalloc
+:LINES: 428-459
+:WORDS: 245
+:HOLDER_LINES_SET_ASIDE: 1
+:BAND: gap
+:CONFIDENCE: 66.5% of the words matched
+:COVERED_WORDS: 163
+:OUTSIDE_THE_MATCH_WORDS: 82
+:NOT_IN_ANY_REFERENCE_WORDS: 74
+:GAP_KIND: partial-text
+:BEST: Expat (DEP-5 paragraph)
+:COMPONENT_1: Expat (DEP-5 paragraph); alone 66.5%; adds 163 words; longest shared run 163 words; sha256 d6ab49c37015ea3263f730f8cadb52445cde82bea3e73ed58efb90481f3e00e8; /usr/share/doc/age/copyright
+:CLOSEST: Expat (DEP-5 paragraph) (66.5%); ISC (DEP-5 paragraph) (16.3%); GPL-3 (13.4%)
+:NAME_AGREES: no
+:STARTS: this is a version aka dlmalloc of malloc free realloc written by
+:END:
+Observed: 245 words after setting aside 1 copyright-holder lines; 163 of them lie in 4-word runs that a reference also holds (66.5%).
+Observed: Expat (DEP-5 paragraph) covers 66.5% of the stanza alone and adds 163 words here; the longest run it shares with the stanza is 163 words.
+Observed: 74 words match no reference at all.
+Judged: no confidence: a gap (more than 17 per cent of the words are outside any match). The bands are house numbers (4, 9, 17), invented here, not measured.
+Judged: a gap of kind partial-text: some of its words are in a reference, but more than 17 per cent are not, so it may be another licence that shares phrases, or an altered text.
+
+Observed: the words that match no reference (normalised: lower case, punctuation gone), in order:
+#+BEGIN_EXAMPLE
+words 1-16: this is a version aka dlmalloc of malloc free realloc written by doug lea and released
+words 21-23: as explained at
+words 28-82: publicdomain send questions comments complaints performance data etc to dl cs oswego edu incorporates code from intrin x86 h which bears the following notice compatibility intrin x86 h header for gcc gcc equivalents of intrinsic microsoft visual c functions originally developed for the reactos http  ...
+#+END_EXAMPLE

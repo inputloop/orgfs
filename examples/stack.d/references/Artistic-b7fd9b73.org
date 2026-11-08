@@ -1,0 +1,13 @@
+* reference Artistic :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: Artistic-b7fd9b73.org
+:NAME: Artistic
+:PATH: /usr/share/common-licenses/Artistic
+:SHA256: b7fd9b73ea99602016a326e0b62e6646060d18febdd065ceca8bb482208c3d88
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 980
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference Artistic, read on vm, is the text at /usr/share/common-licenses/Artistic; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

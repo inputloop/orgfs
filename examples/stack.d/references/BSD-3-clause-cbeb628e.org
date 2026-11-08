@@ -1,0 +1,13 @@
+* reference BSD-3-clause :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: BSD-3-clause-cbeb628e.org
+:NAME: BSD-3-clause
+:PATH: /usr/share/doc/dash/copyright
+:SHA256: cbeb628ea69eceeb417abc0f648c2d4e553edce27386b365b250cc04fa25f585
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/dash/copyright (held by 18 packages)
+:WORDS: 214
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference BSD-3-clause, read on vm, is the text at /usr/share/doc/dash/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/dash/copyright (held by 18 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

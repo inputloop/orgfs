@@ -1,0 +1,14 @@
+* reference CC-BY-4.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: CC-BY-4.0-2c5c8f50.org
+:NAME: CC-BY-4.0
+:PATH: /usr/share/doc/libuv1t64/copyright
+:SHA256: 2c5c8f50775da98f6bb8043acc73d21c613afda71690faf0d21d9af2379e2964
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/libuv1t64/copyright (held by 1 packages)
+:WORDS: 2619
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:ONLY_PACKAGE: libuv1t64
+:END:
+Observed: the reference CC-BY-4.0, read on vm, is the text at /usr/share/doc/libuv1t64/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/libuv1t64/copyright (held by 1 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

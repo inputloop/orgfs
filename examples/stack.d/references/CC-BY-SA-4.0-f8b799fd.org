@@ -1,0 +1,13 @@
+* reference CC-BY-SA-4.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: CC-BY-SA-4.0-f8b799fd.org
+:NAME: CC-BY-SA-4.0
+:PATH: /usr/share/doc/gtk-update-icon-cache/copyright
+:SHA256: f8b799fd8c94d107dbc20cbf5c415b6aa49b16dc5f85adbed15e040010f62f23
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/gtk-update-icon-cache/copyright (held by 3 packages)
+:WORDS: 2830
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference CC-BY-SA-4.0, read on vm, is the text at /usr/share/doc/gtk-update-icon-cache/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/gtk-update-icon-cache/copyright (held by 3 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

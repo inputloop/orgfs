@@ -1,0 +1,51 @@
+* python3 :SEEN_HERE:
+:PROPERTIES:
+:ORGFS_ATOM: tool-python3.org
+:ROLE: stack-tool
+:TOOL: python3
+:READ_AT: 2026-11-08T07:20:49Z
+:READ_ON: vm
+:READ_ENV: Linux 6.18.44-fc-v310; Ubuntu 24.04.5 LTS
+:PRESENT: yes
+:COMMAND_PATH: /usr/local/bin/python3
+:RESOLVED_PATH: /usr/local/bin/python3.13
+:VERSION: Python 3.13.18
+:VERSION_TEXT_SHA256: 26b0983332a804eb927655c77030b0c09554ea40f8492c89d92d24ecc66c41df
+:END:
+Observed on vm at 2026-11-08T07:20:49Z: python3 is at /usr/local/bin/python3, which resolves to /usr/local/bin/python3.13. The commands below were run and printed what is quoted.
+
+#+BEGIN_EXAMPLE
+$ python3 --version
+Python 3.13.18
+#+END_EXAMPLE
+
+Observed: share/licensing.tsv, the register the licensing page is made from, has no row whose first word is python3.
+
+Judged: nothing here. The facts above are copied from the commands and files named, and the gaps say what was not read.
+
+** gap stack-python3-package
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-python3-package
+:WHAT_KIND: package
+:WHAT_SHAPE: package, source package, upstream version and licence
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: not read
+:WHY: dpkg-query -S found no package that owns /usr/local/bin/python3.13 (see the quoted tries, or the file is not from a package)
+:REACH: anyone on a Debian or Ubuntu host with the same file
+:ROUTE: run orgfs stack on a host where dpkg-query -S /usr/local/bin/python3.13 names a package
+:END:
+** gap stack-python3-commits
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-python3-commits
+:WHAT_KIND: commits
+:WHAT_SHAPE: the commits that make this version distinct
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: NOT CHECKED (needs the upstream tree; intake is a later slice)
+:WHY: that needs the upstream tree, which this slice does not fetch
+:REACH: anyone who can clone the upstream tree
+:ROUTE: a later intake slice: clone the upstream tree at the version's tag and run orgfs who on it
+:END:

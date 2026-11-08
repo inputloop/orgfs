@@ -1,0 +1,14 @@
+* reference LGPL-2.1 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: LGPL-2.1-0be884d6.org
+:NAME: LGPL-2.1
+:PATH: /usr/share/doc/libbabeltrace1/copyright
+:SHA256: 0be884d6e2c6ffd0d69894485e26ffb19d54b14d0b608c9cc2a3e468e74a6c87
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/libbabeltrace1/copyright (held by 1 packages)
+:WORDS: 112
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:ONLY_PACKAGE: libbabeltrace1
+:END:
+Observed: the reference LGPL-2.1, read on vm, is the text at /usr/share/doc/libbabeltrace1/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/libbabeltrace1/copyright (held by 1 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

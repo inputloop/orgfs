@@ -1,0 +1,13 @@
+* reference MPL-2.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: MPL-2.0-b0475981.org
+:NAME: MPL-2.0
+:PATH: /usr/share/doc/ca-certificates/copyright
+:SHA256: b0475981dde4ce6fa76fb6ebfc9a164afd01a34db16c2dc02b259cae81d956a7
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/ca-certificates/copyright (held by 6 packages)
+:WORDS: 2422
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference MPL-2.0, read on vm, is the text at /usr/share/doc/ca-certificates/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/ca-certificates/copyright (held by 6 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

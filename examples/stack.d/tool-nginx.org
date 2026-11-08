@@ -1,0 +1,93 @@
+* nginx :SEEN_HERE:
+:PROPERTIES:
+:ORGFS_ATOM: tool-nginx.org
+:ROLE: stack-tool
+:TOOL: nginx
+:READ_AT: 2026-11-08T07:20:49Z
+:READ_ON: vm
+:READ_ENV: Linux 6.18.44-fc-v310; Ubuntu 24.04.5 LTS
+:PRESENT: yes
+:COMMAND_PATH: /usr/sbin/nginx
+:RESOLVED_PATH: /usr/sbin/nginx
+:VERSION: nginx version: nginx/1.24.0 (Ubuntu)
+:VERSION_TEXT_SHA256: 8dc192ee3bedc010d699fd3025d34d451603faac691041179e8b87b8793c6c8e
+:PACKAGE: nginx
+:PACKAGE_VERSION: 1.24.0-2ubuntu7.19
+:SOURCE_PACKAGE: nginx
+:UPSTREAM_VERSION: 1.24.0
+:HOMEPAGE: https://nginx.org
+:COPYRIGHT_PATH: /usr/share/doc/nginx/copyright
+:LICENSES: BSD-2-clause; Expat; GPL-2+; public-domain
+:REGISTER_ROW: nginx (line 10 of share/licensing.tsv)
+:END:
+Observed on vm at 2026-11-08T07:20:49Z: nginx is at /usr/sbin/nginx. The commands below were run and printed what is quoted.
+
+#+BEGIN_EXAMPLE
+$ nginx -v
+nginx version: nginx/1.24.0 (Ubuntu)
+#+END_EXAMPLE
+
+Observed: Debian names the owner of that file as package nginx, version 1.24.0-2ubuntu7.19, built from source package nginx; the upstream version derived from it (epoch and the last hyphen-part dropped) is 1.24.0.
+
+#+BEGIN_EXAMPLE
+$ dpkg-query -S /usr/sbin/nginx
+nginx: /usr/sbin/nginx
+$ dpkg-query -W -f '${Package}|${Version}|${Source}|${Architecture}|${Homepage}\n' nginx
+nginx|1.24.0-2ubuntu7.19||amd64|https://nginx.org
+#+END_EXAMPLE
+
+Observed: the distinct License: lines of /usr/share/doc/nginx/copyright, in file order, are quoted here. They are what the file says; this tool does not say whether they are right or how they combine.
+
+#+BEGIN_EXAMPLE
+License: BSD-2-clause
+License: Expat
+License: GPL-2+
+License: public-domain
+#+END_EXAMPLE
+
+Observed: share/licensing.tsv, the register the licensing page is made from, has a row for nginx (line 10) that reads: BSD-2-Clause. It is a different source from the copyright file above, and this tool does not say whether the two agree.
+
+Judged: nothing here. The facts above are copied from the commands and files named, and the gaps say what was not read.
+
+** licence guess
+:PROPERTIES:
+:ROLE: licence-guess
+:PACKAGE: nginx
+:IN_EFFECT: machine guess
+:GUESS_CURRENT: guesses/nginx/20261108T072049Z-shingle4-containment-v1.org
+:GUESS_HISTORY: guesses/nginx/ (1 guess)
+:CORRECTIONS_APPROVED: 0
+:CORRECTIONS_PROPOSED: 0
+:END:
+Observed: the machine guess is guesses/nginx/20261108T072049Z-shingle4-containment-v1.org, made 2026-11-08T07:20:49Z by shingle4-containment version 1 from /usr/share/doc/nginx/copyright (sha256 7d84aad3d51a930c81bab6278583351406647c11dddd53b9260f9a45118adc96): nothing to score.
+Observed: 57 paragraphs carry only standard short names (BSD-2-clause; Expat; GPL-2+; public-domain), taken as stated and not scored.
+Judged: the band edges are 4 9 17 (house numbers, invented), not measured; method shingle4-containment version 1. The guess atom lists, for each stanza, the words that matched no reference.
+Observed: this is the only guess so far for this package; a later one will be linked to it by PREVIOUS and NEXT.
+To offer a correction: tell the project by an issue or by mail; a maintainer records it with  orgfs stack correct nginx --says LICENCE --by NAME --why REASON  and a different person approves it with  orgfs stack approve CORRECTION --by NAME.
+
+** gap stack-nginx-vcs
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-nginx-vcs
+:WHAT_KIND: vcs-url
+:WHAT_SHAPE: the Vcs-Git URL and the upstream tag of the source package
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: not read: dpkg-query -W -f offers only the fields in the status database, and Vcs-Git is not one
+:WHY: the source package's own metadata is not on this box and no network is used
+:REACH: anyone with the source package index or the upstream project
+:ROUTE: apt-cache showsrc nginx (the Vcs- lines), after apt-get update where the source indices are missing
+:END:
+** gap stack-nginx-commits
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-nginx-commits
+:WHAT_KIND: commits
+:WHAT_SHAPE: the commits that make this version distinct
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: NOT CHECKED (needs the upstream tree; intake is a later slice)
+:WHY: that needs the upstream tree, which this slice does not fetch
+:REACH: anyone who can clone the upstream tree
+:ROUTE: a later intake slice: clone the upstream tree at the version's tag and run orgfs who on it
+:END:

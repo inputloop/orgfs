@@ -1,0 +1,13 @@
+* reference GPL-1 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: GPL-1-d77d235e.org
+:NAME: GPL-1
+:PATH: /usr/share/common-licenses/GPL-1
+:SHA256: d77d235e41d54594865151f4751e835c5a82322b0e87ace266567c3391a4b912
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 2075
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference GPL-1, read on vm, is the text at /usr/share/common-licenses/GPL-1; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

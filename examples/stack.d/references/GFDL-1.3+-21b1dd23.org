@@ -1,0 +1,14 @@
+* reference GFDL-1.3+ :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: GFDL-1.3+-21b1dd23.org
+:NAME: GFDL-1.3+
+:PATH: /usr/share/doc/guile-3.0-libs/copyright
+:SHA256: 21b1dd23319e872a4003aafe252add80a1cbbae9b7161ccab029dfc01933a31b
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/guile-3.0-libs/copyright (held by 1 packages)
+:WORDS: 46
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:ONLY_PACKAGE: guile-3.0-libs
+:END:
+Observed: the reference GFDL-1.3+, read on vm, is the text at /usr/share/doc/guile-3.0-libs/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/guile-3.0-libs/copyright (held by 1 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

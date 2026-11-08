@@ -22,7 +22,7 @@ prove-red:
 	$(PYTHON) tests/prove_red.py
 
 site:
-	sh bin/orgfs site examples/licensing.d _site
+	sh bin/orgfs site examples/licensing.d _site --stack examples/stack.d
 
 # the composed file is generated from the atoms; it is not kept in git
 compose:

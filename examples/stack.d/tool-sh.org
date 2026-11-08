@@ -1,0 +1,104 @@
+* sh :SEEN_HERE:
+:PROPERTIES:
+:ORGFS_ATOM: tool-sh.org
+:ROLE: stack-tool
+:TOOL: sh
+:READ_AT: 2026-11-08T07:20:49Z
+:READ_ON: vm
+:READ_ENV: Linux 6.18.44-fc-v310; Ubuntu 24.04.5 LTS
+:PRESENT: yes
+:COMMAND_PATH: /tmp/bb/sh
+:RESOLVED_PATH: /usr/bin/busybox
+:VERSION: BusyBox v1.36.1 (Ubuntu 1:1.36.1-6ubuntu3.1) multi-call binary.
+:VERSION_TEXT_SHA256: 3117d1d873025f8008703dc26f4810579561009dab87785169e25d754afa9528
+:PACKAGE: busybox
+:PACKAGE_VERSION: 1:1.36.1-6ubuntu3.1
+:SOURCE_PACKAGE: busybox
+:UPSTREAM_VERSION: 1.36.1
+:HOMEPAGE: http://www.busybox.net
+:COPYRIGHT_PATH: /usr/share/doc/busybox/copyright
+:REGISTER_ROW: busybox (ash) (line 3 of share/licensing.tsv)
+:END:
+Observed on vm at 2026-11-08T07:20:49Z: sh is at /tmp/bb/sh, which resolves to /usr/bin/busybox. The commands below were run and printed what is quoted.
+
+#+BEGIN_EXAMPLE
+$ /usr/bin/busybox
+BusyBox v1.36.1 (Ubuntu 1:1.36.1-6ubuntu3.1) multi-call binary.
+BusyBox is copyrighted by many authors between 1998-2015.
+Licensed under GPLv2. See source distribution for detailed
+copyright notices.
+
+[41 more lines not quoted]
+#+END_EXAMPLE
+
+Observed: Debian names the owner of that file as package busybox, version 1:1.36.1-6ubuntu3.1, built from source package busybox; the upstream version derived from it (epoch and the last hyphen-part dropped) is 1.36.1.
+
+#+BEGIN_EXAMPLE
+$ dpkg-query -S /usr/bin/busybox
+busybox: /usr/bin/busybox
+$ dpkg-query -W -f '${Package}|${Version}|${Source}|${Architecture}|${Homepage}\n' busybox
+busybox|1:1.36.1-6ubuntu3.1||amd64|http://www.busybox.net
+#+END_EXAMPLE
+
+Observed: share/licensing.tsv, the register the licensing page is made from, has a row for busybox (ash) (line 3) that reads: GPL-2.0-only. It is a different source from the copyright file above, and this tool does not say whether the two agree.
+
+Judged: nothing here. The facts above are copied from the commands and files named, and the gaps say what was not read.
+
+** licence guess
+:PROPERTIES:
+:ROLE: licence-guess
+:PACKAGE: busybox
+:IN_EFFECT: machine guess
+:GUESS_CURRENT: guesses/busybox/20261108T072049Z-shingle4-containment-v1.org
+:GUESS_HISTORY: guesses/busybox/ (1 guess)
+:CORRECTIONS_APPROVED: 0
+:CORRECTIONS_PROPOSED: 0
+:END:
+Observed: the machine guess is guesses/busybox/20261108T072049Z-shingle4-containment-v1.org, made 2026-11-08T07:20:49Z by shingle4-containment version 1 from /usr/share/doc/busybox/copyright (sha256 336d995e819d3a7a3fdbf3f5041c07094f75ee849acb3bb742b7503d45786329): stanza 3: LGPL-2 (DEP-5 paragraph) (low); stanza 4: GPL-1 [tied with 12] (moderate); stanza 5: GPL-1 [tied with 1] (high); stanza 6: GPL-3 (gap).
+- stanza 3 (lines 13-15, 34 words): low confidence, 85.2% of the words matched; matches LGPL-2 (DEP-5 paragraph)
+- stanza 4 (lines 17-20, 38 words): moderate confidence, 94.7% of the words matched; matches GPL-1
+- stanza 5 (lines 22-25, 35 words): high confidence, 97.1% of the words matched; matches GPL-1
+- stanza 6 (lines 27-28, 24 words): a gap, 33.3% of the words matched; matches GPL-3; a gap of kind points-at-reference; closest GPL-3 (33.3%); GPL-1 (25.0%); GPL-2 (DEP-5 paragraph) (25.0%)
+Judged: the band edges are 4 9 17 (house numbers, invented), not measured; method shingle4-containment version 1. The guess atom lists, for each stanza, the words that matched no reference.
+Observed: this is the only guess so far for this package; a later one will be linked to it by PREVIOUS and NEXT.
+To offer a correction: tell the project by an issue or by mail; a maintainer records it with  orgfs stack correct busybox --says LICENCE --by NAME --why REASON  and a different person approves it with  orgfs stack approve CORRECTION --by NAME.
+
+** gap stack-sh-licence
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-sh-licence
+:WHAT_KIND: licence
+:WHAT_SHAPE: the licence the package states
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: not read
+:WHY: /usr/share/doc/busybox/copyright is missing or has no License: line (a free-form copyright file)
+:REACH: anyone with the package's copyright file
+:ROUTE: read /usr/share/doc/busybox/copyright by eye, or the licence file the upstream source ships
+:END:
+** gap stack-sh-vcs
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-sh-vcs
+:WHAT_KIND: vcs-url
+:WHAT_SHAPE: the Vcs-Git URL and the upstream tag of the source package
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: not read: dpkg-query -W -f offers only the fields in the status database, and Vcs-Git is not one
+:WHY: the source package's own metadata is not on this box and no network is used
+:REACH: anyone with the source package index or the upstream project
+:ROUTE: apt-cache showsrc busybox (the Vcs- lines), after apt-get update where the source indices are missing
+:END:
+** gap stack-sh-commits
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-sh-commits
+:WHAT_KIND: commits
+:WHAT_SHAPE: the commits that make this version distinct
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: NOT CHECKED (needs the upstream tree; intake is a later slice)
+:WHY: that needs the upstream tree, which this slice does not fetch
+:REACH: anyone who can clone the upstream tree
+:ROUTE: a later intake slice: clone the upstream tree at the version's tag and run orgfs who on it
+:END:

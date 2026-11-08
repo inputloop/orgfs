@@ -1,0 +1,127 @@
+* org :SEEN_HERE:
+:PROPERTIES:
+:ORGFS_ATOM: tool-org.org
+:ROLE: stack-tool
+:TOOL: org
+:READ_AT: 2026-11-08T07:20:49Z
+:READ_ON: vm
+:READ_ENV: Linux 6.18.44-fc-v310; Ubuntu 24.04.5 LTS
+:PRESENT: yes
+:COMMAND_PATH: /usr/bin/emacs
+:RESOLVED_PATH: /usr/share/emacs/29.3/lisp/org/org.elc
+:VERSION: 9.6.15
+:VERSION_TEXT_SHA256: 373106c8de8c72b8be5c8d78e4f8ebd8614fd2d36cac20ea58d476dd8cfc9a5e
+:PACKAGE: emacs-common
+:PACKAGE_VERSION: 1:29.3+1-1ubuntu2
+:SOURCE_PACKAGE: emacs
+:UPSTREAM_VERSION: 29.3+1
+:HOMEPAGE: https://www.gnu.org/software/emacs/
+:COPYRIGHT_PATH: /usr/share/doc/emacs-common/copyright
+:LICENSES: GPL-3+; GPL plus Ian; manpage license; efaq.texi license; efaq-w32.texi license; LGPL-2+; LGPL-3+; GPL-2+ or LGPL-3+; GPL-2+; same as corresponding file in /etc/images; Creative Commons Attribution-ShareAlike 3.0 License; MPL-2.0; meese.el license; gnulib-comp.m4 license; pkg.m4 license; m4 license; sedadmin.inp license; nt/inc/dirent.h license; GPL-2
+:END:
+Observed on vm at 2026-11-08T07:20:49Z: org is at /usr/bin/emacs, which resolves to /usr/share/emacs/29.3/lisp/org/org.elc. The commands below were run and printed what is quoted.
+
+#+BEGIN_EXAMPLE
+$ emacs -Q --batch --eval '(progn (require (quote org)) (princ (concat (org-release) "\n" (locate-library "org") "\n")))'
+9.6.15
+/usr/share/emacs/29.3/lisp/org/org.elc
+#+END_EXAMPLE
+
+Observed: Debian names the owner of that file as package emacs-common, version 1:29.3+1-1ubuntu2, built from source package emacs; the upstream version derived from it (epoch and the last hyphen-part dropped) is 29.3+1.
+
+#+BEGIN_EXAMPLE
+$ dpkg-query -S /usr/share/emacs/29.3/lisp/org/org.elc
+emacs-common: /usr/share/emacs/29.3/lisp/org/org.elc
+$ dpkg-query -W -f '${Package}|${Version}|${Source}|${Architecture}|${Homepage}\n' emacs-common
+emacs-common|1:29.3+1-1ubuntu2|emacs|all|https://www.gnu.org/software/emacs/
+#+END_EXAMPLE
+
+Observed: the distinct License: lines of /usr/share/doc/emacs-common/copyright, in file order, are quoted here. They are what the file says; this tool does not say whether they are right or how they combine.
+
+#+BEGIN_EXAMPLE
+License: GPL-3+
+License: GPL plus Ian
+License: manpage license
+License: efaq.texi license
+License: efaq-w32.texi license
+License: LGPL-2+
+License: LGPL-3+
+License: GPL-2+ or LGPL-3+
+License: GPL-2+
+License: same as corresponding file in /etc/images
+License: Creative Commons Attribution-ShareAlike 3.0 License
+License: MPL-2.0
+License: meese.el license
+License: gnulib-comp.m4 license
+License: pkg.m4 license
+License: m4 license
+License: sedadmin.inp license
+License: nt/inc/dirent.h license
+License: GPL-2
+#+END_EXAMPLE
+
+Observed: share/licensing.tsv, the register the licensing page is made from, has no row whose first word is org or emacs-common.
+
+Judged: nothing here. The facts above are copied from the commands and files named, and the gaps say what was not read.
+
+** licence guess
+:PROPERTIES:
+:ROLE: licence-guess
+:PACKAGE: emacs-common
+:IN_EFFECT: machine guess
+:GUESS_CURRENT: guesses/emacs-common/20261108T072049Z-shingle4-containment-v1.org
+:GUESS_HISTORY: guesses/emacs-common/ (1 guess)
+:CORRECTIONS_APPROVED: 0
+:CORRECTIONS_PROPOSED: 0
+:END:
+Observed: the machine guess is guesses/emacs-common/20261108T072049Z-shingle4-containment-v1.org, made 2026-11-08T07:20:49Z by shingle4-containment version 1 from /usr/share/doc/emacs-common/copyright (sha256 16938087445258f5d8458dcc7b559d09348081d0b1331539a14b2087dc38dce0): stanza 1: no match (gap); stanza 2: Expat (DEP-5 paragraph) (gap); stanza 3: GFDL-1.2 [tied with 12] (gap); stanza 4: CC-BY-3.0 (DEP-5 paragraph) [tied with 4] (gap); stanza 5: CC-BY-3.0 (DEP-5 paragraph) [tied with 4] (gap); stanza 6: MPL-1.1 (DEP-5 paragraph) [tied with 2] (gap); stanza 7: CC-BY-SA-3.0 (DEP-5 paragraph) (gap); stanza 8: CC-BY-SA-3.0 (DEP-5 paragraph) (gap); stanza 9: public-domain (DEP-5 paragraph) (gap); stanza 10: LGPL-2.1 (gap); stanza 11: GPL-2 (gap); stanza 12: GFDL-1.2 [tied with 2] (gap); stanza 13: GPL-1 (gap); stanza 14: no match (gap); stanza 15: GPL-1 (gap); stanza 16: Expat (DEP-5 paragraph) (gap); stanza 17: Zlib (DEP-5 paragraph) (gap); stanza 18: GFDL-1.2 [tied with 1] (gap).
+Observed: 10 paragraphs carry only standard short names (GPL-3+; LGPL-2+; LGPL-3+; GPL-2+ or LGPL-3+; GPL-2+; MPL-2.0; GPL-2), taken as stated and not scored.
+- stanza 1 (lines 41-52, 4 words): a gap, not scored; a gap of kind too-short
+- stanza 2 (lines 54-84, 239 words): a gap, 66.1% of the words matched; matches Expat (DEP-5 paragraph); a gap of kind partial-text; closest Expat (DEP-5 paragraph) (66.1%); ISC (DEP-5 paragraph) (15.4%); GPL-1 (12.5%)
+- stanza 3 (lines 86-90, 29 words, named GPL plus Ian): a gap, 31.0% of the words matched; matches GFDL-1.2; a gap of kind partial-text; closest GFDL-1.2 (31.0%); GFDL-1.3 (31.0%); GPL-1 (31.0%)
+- stanza 4 (lines 101-120, 141 words, named efaq.texi license): a gap, 2.8% of the words matched; matches CC-BY-3.0 (DEP-5 paragraph); a gap of kind partial-text; closest CC-BY-3.0 (DEP-5 paragraph) (2.8%); CC-BY-SA-3.0 (DEP-5 paragraph) (2.8%); MPL-1.1 (DEP-5 paragraph) (2.8%)
+- stanza 5 (lines 122-138, 129 words, named efaq-w32.texi license): a gap, 3.1% of the words matched; matches CC-BY-3.0 (DEP-5 paragraph); a gap of kind partial-text; closest CC-BY-3.0 (DEP-5 paragraph) (3.1%); CC-BY-SA-3.0 (DEP-5 paragraph) (3.1%); MPL-1.1 (DEP-5 paragraph) (3.1%)
+- stanza 6 (lines 296-300, 29 words, named same as corresponding file in /etc/images): a gap, 13.7% of the words matched; matches MPL-1.1 (DEP-5 paragraph); a gap of kind partial-text; closest MPL-1.1 (DEP-5 paragraph) (13.7%); MPL-1.1 (13.7%); MPL-1.1+ (DEP-5 paragraph) (13.7%)
+- stanza 7 (lines 356-389, 268 words): a gap, 16.0% of the words matched; matches CC-BY-SA-3.0 (DEP-5 paragraph), GPL-1; a gap of kind partial-text; closest CC-BY-SA-3.0 (DEP-5 paragraph) (9.7%); LGPL-2 (9.3%); LGPL-2.1 (9.3%)
+- stanza 8 (lines 391-422, 266 words): a gap, 16.1% of the words matched; matches CC-BY-SA-3.0 (DEP-5 paragraph), GPL-1; a gap of kind partial-text; closest CC-BY-SA-3.0 (DEP-5 paragraph) (9.7%); LGPL-2 (9.3%); LGPL-2.1 (9.3%)
+- stanza 9 (lines 424-429, 26 words, named meese.el license): a gap, 19.2% of the words matched; matches public-domain (DEP-5 paragraph); a gap of kind partial-text; closest public-domain (DEP-5 paragraph) (19.2%); Artistic (15.3%)
+- stanza 10 (lines 431-449, 143 words, named gnulib-comp.m4 license): a gap, 75.5% of the words matched; matches LGPL-2.1; a gap of kind partial-text; closest LGPL-2.1 (75.5%); LGPL-2 (74.8%); GPL-3 (73.4%)
+- stanza 11 (lines 451-472, 161 words, named pkg.m4 license): a gap, 78.8% of the words matched; matches GPL-2; a gap of kind partial-text; closest GPL-2 (78.8%); LGPL-2 (78.2%); LGPL-2.1 (78.2%)
+- stanza 12 (lines 474-478, 29 words, named m4 license): a gap, 27.5% of the words matched; matches GFDL-1.2; a gap of kind partial-text; closest GFDL-1.2 (27.5%); GFDL-1.3 (27.5%); GPL-1 (27.5%)
+- stanza 13 (lines 480-490, 67 words, named sedadmin.inp license): a gap, 55.2% of the words matched; matches GPL-1; a gap of kind partial-text; closest GPL-1 (55.2%); GPL-2 (50.7%); LGPL-2 (47.7%)
+- stanza 14 (lines 492-496, 17 words, named nt/inc/dirent.h license): a gap, 0.0% of the words matched; a gap of kind no-reference
+- stanza 15 (lines 498-507, 66 words): a gap, 60.6% of the words matched; matches GPL-1; a gap of kind partial-text; closest GPL-1 (60.6%); GPL-2 (56.0%); LGPL-2 (56.0%)
+- stanza 16 (lines 521-545, 214 words): a gap, 53.2% of the words matched; matches Expat (DEP-5 paragraph); a gap of kind partial-text; closest Expat (DEP-5 paragraph) (53.2%); GPL-3 (19.1%); GPL-2 (17.2%)
+- stanza 17 (lines 547-600, 342 words): a gap, 22.8% of the words matched; matches Zlib (DEP-5 paragraph), GPL-3; a gap of kind partial-text; closest Zlib (DEP-5 paragraph) (13.7%); GPL-3 (9.0%); GPL-1 (7.8%)
+- stanza 18 (lines 977-990, 101 words, named manpage license): a gap, 38.6% of the words matched; matches GFDL-1.2; a gap of kind partial-text; closest GFDL-1.2 (38.6%); GFDL-1.3 (38.6%); GFDL-1.3+ (DEP-5 paragraph) (26.7%)
+- stanza name Creative Commons Attribution-ShareAlike 3.0 License (lines 348-348,  words, named Creative Commons Attribution-ShareAlike 3.0 License): a gap, ; a gap of kind name-without-text
+Judged: the band edges are 4 9 17 (house numbers, invented), not measured; method shingle4-containment version 1. The guess atom lists, for each stanza, the words that matched no reference.
+Observed: this is the only guess so far for this package; a later one will be linked to it by PREVIOUS and NEXT.
+To offer a correction: tell the project by an issue or by mail; a maintainer records it with  orgfs stack correct emacs-common --says LICENCE --by NAME --why REASON  and a different person approves it with  orgfs stack approve CORRECTION --by NAME.
+
+** gap stack-org-vcs
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-org-vcs
+:WHAT_KIND: vcs-url
+:WHAT_SHAPE: the Vcs-Git URL and the upstream tag of the source package
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: not read: dpkg-query -W -f offers only the fields in the status database, and Vcs-Git is not one
+:WHY: the source package's own metadata is not on this box and no network is used
+:REACH: anyone with the source package index or the upstream project
+:ROUTE: apt-cache showsrc emacs (the Vcs- lines), after apt-get update where the source indices are missing
+:END:
+** gap stack-org-commits
+:PROPERTIES:
+:ROLE: gap
+:GAP_ID: stack-org-commits
+:WHAT_KIND: commits
+:WHAT_SHAPE: the commits that make this version distinct
+:RULE: orgfs stack writes a gap record for every fact it could not read, and reads nothing from the network
+:RULE_AT: bin/orgfs, cmd_stack (orgfs 0.5.0-dev); README.org, The tools we stand on
+:HOW: NOT CHECKED (needs the upstream tree; intake is a later slice)
+:WHY: that needs the upstream tree, which this slice does not fetch
+:REACH: anyone who can clone the upstream tree
+:ROUTE: a later intake slice: clone the upstream tree at the version's tag and run orgfs who on it
+:END:

@@ -1,0 +1,13 @@
+* reference Expat :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: Expat-d6ab49c3.org
+:NAME: Expat
+:PATH: /usr/share/doc/age/copyright
+:SHA256: d6ab49c37015ea3263f730f8cadb52445cde82bea3e73ed58efb90481f3e00e8
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/age/copyright (held by 201 packages)
+:WORDS: 163
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference Expat, read on vm, is the text at /usr/share/doc/age/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/age/copyright (held by 201 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

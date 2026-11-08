@@ -1,0 +1,22 @@
+#+TITLE: The tools orgfs stands on
+
+Observed: orgfs stack (orgfs 0.5.0-dev) wrote this on 2026-11-08T07:20:49Z on the host vm (Linux 6.18.44-fc-v310; Ubuntu 24.04.5 LTS). It reads the tools by running them and the files Debian keeps about them; it makes no network call.
+
+There was no seed, so every atom below was read here and is tagged SEEN_HERE. An atom tagged CARRIED would have come from a seed instead.
+
+#+INCLUDE: "tool-sh.org"
+
+#+INCLUDE: "tool-awk.org"
+
+#+INCLUDE: "tool-git.org"
+
+#+INCLUDE: "tool-python3.org"
+
+#+INCLUDE: "tool-emacs.org"
+
+#+INCLUDE: "tool-org.org"
+
+#+INCLUDE: "tool-nginx.org"
+
+* How to read one of these
+Each tool is one atom: a heading, a drawer of properties for programs, and prose with the quoted commands for people. What could not be read is a gap record, in the same form as the gaps in a view of a spoke, with the command that would fill it.

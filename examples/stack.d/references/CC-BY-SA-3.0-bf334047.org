@@ -1,0 +1,13 @@
+* reference CC-BY-SA-3.0 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: CC-BY-SA-3.0-bf334047.org
+:NAME: CC-BY-SA-3.0
+:PATH: /usr/share/doc/gir1.2-girepository-2.0/copyright
+:SHA256: bf3340476b29cf7a0c050e100ff75f6ce1ca7a98d40a160cb9b663a77bc2b757
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/gir1.2-girepository-2.0/copyright (held by 9 packages)
+:WORDS: 3446
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference CC-BY-SA-3.0, read on vm, is the text at /usr/share/doc/gir1.2-girepository-2.0/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/gir1.2-girepository-2.0/copyright (held by 9 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

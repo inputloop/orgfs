@@ -1,0 +1,29 @@
+* guess nginx :GUESS:
+:PROPERTIES:
+:ORGFS_GUESS: guesses/nginx/20261108T072049Z-shingle4-containment-v1.org
+:PACKAGE: nginx
+:METHOD: shingle4-containment
+:METHOD_VERSION: 1
+:SHINGLE_WORDS: 4
+:MIN_STANZA_WORDS: 12
+:BAND_PERCENTS: 4 9 17 (house numbers, invented)
+:MADE_AT: 2026-11-08T07:20:49Z
+:MADE_ON: vm
+:FILE_READ: /usr/share/doc/nginx/copyright
+:FILE_SHA256: 7d84aad3d51a930c81bab6278583351406647c11dddd53b9260f9a45118adc96
+:REFERENCE_SET_SHA256: d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01
+:REFERENCES_USED: 40
+:INPUTS_KEY: b4862ee43dbaa9276715b56fc422ae35761753d818a8ac04831c08415bc0f030
+:FORMAT: dep5
+:STANDARD_STANZAS_NOT_SCORED: 57
+:STANDARD_NAMES: BSD-2-clause; Expat; GPL-2+; public-domain
+:STANZAS_SCORED: 0
+:PROSE_BLOCKS_SET_ASIDE: 0
+:SHORT_BLOCKS_SET_ASIDE: not applicable
+:NAME_GAPS: 0
+:SUMMARY: 
+:PREVIOUS: none
+:END:
+Observed: orgfs stack (orgfs 0.5.0-dev) made this guess on 2026-11-08T07:20:49Z on vm from the dep5 copyright file /usr/share/doc/nginx/copyright (sha256 7d84aad3d51a930c81bab6278583351406647c11dddd53b9260f9a45118adc96), against the reference set d3290ec49f13f2b1b80500cb91fc9c34e4a884e7e3c67ee82ceaad4de8175c01 (40 references; atoms in references/). The method is shingle4-containment, version 1. No network call and no model call was made.
+Observed: 57 paragraphs carry only standard short names (BSD-2-clause; Expat; GPL-2+; public-domain); the file states those in a machine-readable form, so they are taken as stated and not scored.
+Judged: nothing in this guess is a finding about the law. It says how much of the wording of the file also stands in a text the host already holds in a machine-readable form.

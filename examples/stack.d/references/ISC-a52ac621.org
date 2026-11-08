@@ -1,0 +1,13 @@
+* reference ISC :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: ISC-a52ac621.org
+:NAME: ISC
+:PATH: /usr/share/doc/curl/copyright
+:SHA256: a52ac621958ffc8128cd0a5c5b85f93fbce1a79cdbe2ce390c5abc0233bd0cbc
+:SHA256_OF: the normalised words, one per line
+:NAME_FROM: the License: field of a DEP-5 paragraph in /usr/share/doc/curl/copyright (held by 26 packages)
+:WORDS: 112
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:END:
+Observed: the reference ISC, read on vm, is the text at /usr/share/doc/curl/copyright; the License: field of a DEP-5 paragraph in /usr/share/doc/curl/copyright (held by 26 packages).
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

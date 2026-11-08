@@ -1,0 +1,14 @@
+* reference GFDL-1.3 :REFERENCE:
+:PROPERTIES:
+:ORGFS_REFERENCE: GFDL-1.3-11053552.org
+:NAME: GFDL-1.3
+:PATH: /usr/share/common-licenses/GFDL-1.3
+:SHA256: 110535522396708cea37c72a802c5e7e81391139f5f7985631c93ef242b206a4
+:SHA256_OF: the file bytes
+:NAME_FROM: the file name in /usr/share/common-licenses
+:WORDS: 3740
+:WRITTEN_AT: 2026-11-08T07:20:49Z
+:ALIASES: GFDL
+:END:
+Observed: the reference GFDL-1.3, read on vm, is the text at /usr/share/common-licenses/GFDL-1.3; the file name in /usr/share/common-licenses.
+Judged: nothing here. It is a reference because the host holds it in a machine-readable form, not because it was checked to be the licence it is named for.

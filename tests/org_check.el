@@ -162,8 +162,9 @@ ALLOWED: the element types the file may hold (default `oc-allowed-elements')."
       ;; (b) the atoms, found by Org
       (let* ((org-atoms (sort (oc-parse-atoms tree) #'string<))
              (files (sort (cl-remove-if (lambda (f) (string= f "story.org"))
-                                        (mapcar (lambda (f) (file-relative-name f dir))
-                                                (directory-files-recursively dir "\\.org\\'")))
+                                        (cl-remove-if (lambda (f) (string-match-p "\\`\\(guesses\\|references\\|corrections\\)/" f))   ; records beside the atoms, not atoms of the story
+                                                      (mapcar (lambda (f) (file-relative-name f dir))
+                                                              (directory-files-recursively dir "\\.org\\'"))))
                           #'string<)))
         (oc-assert (equal org-atoms files) "%s: Org finds the atoms %S, the directory holds %S" label org-atoms files)
         ;; the manifest table, and hashes Emacs computes itself
@@ -408,6 +409,108 @@ ALLOWED: the element types the file may hold (default `oc-allowed-elements')."
       (oc-stack-gaps-whole tree "stack seeded")
       (oc-say "org_check: ok stack (%d atoms read by Org, %d carried from the seed, tags and gap records whole)" (length tags) carried))))
 
+;;; (f) licence confidence: the guesses, their chain, the references and the corrections, read by Org
+
+(defun oc-org-tree (file)
+  (with-temp-buffer
+    (let ((coding-system-for-read 'utf-8-unix)) (insert-file-contents file))
+    (let ((org-inhibit-startup t)) (org-mode))
+    (org-element-parse-buffer)))
+
+(defun oc-first-props (tree)
+  "An alist of the properties of the first headline's drawer."
+  (let ((hl (car (org-element-contents tree))))
+    (setq hl (org-element-map tree 'headline #'identity nil t))
+    (let (out)
+      (org-element-map (car (org-element-contents (car (org-element-contents hl)))) 'node-property
+        (lambda (np) (push (cons (upcase (org-element-property :key np)) (org-element-property :value np)) out)))
+      (nreverse out))))
+
+(defun oc-link-path (value)
+  "The path of the one file link Org finds in VALUE (a property value), or nil."
+  (with-temp-buffer
+    (insert value)
+    (let ((org-inhibit-startup t)) (org-mode))
+    (let ((l (org-element-map (org-element-parse-buffer) 'link (lambda (x) x) nil t)))
+      (and l (equal (org-element-property :type l) "file") (org-element-property :path l)))))
+
+(defun oc-licence-case ()
+  (let* ((probe (expand-file-name "lic0" oc-tmp)) pkg)
+    (oc-orgfs-ok "stack" probe)
+    (setq pkg (let ((p (with-temp-buffer (insert-file-contents (expand-file-name "tool-sh.org" probe))
+                                           (and (re-search-forward "^:PACKAGE: \\(.*\\)$" nil t) (match-string 1)))))
+                (and p (car (split-string p ":")))))
+    (if (not pkg)
+        (oc-say "org_check: NOT CHECKED licence confidence (no package owns sh here, so no copyright file was read)")
+      (let* ((doc (expand-file-name "licdoc" oc-tmp)) (cl (expand-file-name "licref" oc-tmp))
+             (d (expand-file-name "lic1" oc-tmp))
+             (words (cl-loop for i from 1 to 60 collect (format "wordn%d" i)))
+             (ref (concat "license " (mapconcat #'identity words " ") "\n"))
+             (process-environment (append (list (concat "ORGFS_DOC=" doc) (concat "ORGFS_COMMON_LICENSES=" cl)) process-environment)))
+        (oc-write (expand-file-name "Refone" cl) ref)
+        (oc-write (expand-file-name (concat pkg "/copyright") doc) (concat "Intro line.\n\nCopyright 2026 Somebody\nlicense " (mapconcat #'identity words " ") "\n"))
+        (oc-orgfs-ok "stack" d)
+        (oc-write (expand-file-name (concat pkg "/copyright") doc) (concat "Intro line.\n\nCopyright 2026 Somebody\nlicense " (mapconcat #'identity (cl-subseq words 0 40) " ") " extra words appear here too\n"))
+        (oc-orgfs-ok "stack" d)
+        (let* ((gd (expand-file-name (concat "guesses/" pkg) d))
+               (files (sort (directory-files gd t "\\.org\\'") #'string<))
+               (n 0))
+          (oc-assert (= (length files) 2) "licence: %d guesses after two different inputs, wanted 2" (length files))
+          (dolist (f files)
+            (let* ((tree (oc-org-tree f)) (props (oc-first-props tree))
+                   (prev (cdr (assoc "PREVIOUS" props))) (next (cdr (assoc "NEXT" props))))
+              (oc-assert (assoc "ORGFS_GUESS" props) "licence: %s has no ORGFS_GUESS in the first drawer" f)
+              (oc-assert (assoc "INPUTS_KEY" props) "licence: %s has no INPUTS_KEY" f)
+              ;; the stanzas are headlines under the guess, with a band in a drawer
+              (let ((st (org-element-map tree 'headline
+                          (lambda (hl) (and (= 2 (org-element-property :level hl)) (string-prefix-p "stanza" (org-element-property :raw-value hl)) hl)))))
+                (oc-assert (>= (length (delq nil st)) 1) "licence: Org finds no stanza headline in %s" f)
+                (cl-incf n (length (delq nil st))))
+              ;; links, both ways: what PREVIOUS names has this file as NEXT, and the other way about
+              (cond ((member f (list (car files)))
+                     (oc-assert (string= prev "none") "licence: the first guess has PREVIOUS %S" prev)
+                     (let ((np (oc-link-path next)))
+                       (oc-assert np "licence: the first guess has no NEXT link Org can read (%S)" next)
+                       (let ((other (expand-file-name np gd)))
+                         (oc-assert (file-exists-p other) "licence: NEXT of %s leads nowhere" f)
+                         (let ((back (oc-link-path (cdr (assoc "PREVIOUS" (oc-first-props (oc-org-tree other)))))))
+                           (oc-assert (string= (expand-file-name back gd) f) "licence: the guess after %s does not name it as PREVIOUS" f)))))
+                    (t (oc-assert (null next) "licence: the newest guess has a NEXT")
+                       (let ((pp (oc-link-path prev)))
+                         (oc-assert pp "licence: PREVIOUS of the newest guess is not a link Org can read (%S)" prev)
+                         (oc-assert (string= (expand-file-name pp gd) (car files)) "licence: PREVIOUS of the newest guess is not the first one"))))))
+          ;; the references are atoms with a hash
+          (let ((refs (directory-files (expand-file-name "references" d) t "\\.org\\'")))
+            (oc-assert refs "licence: no reference atoms")
+            (dolist (r refs)
+              (let ((props (oc-first-props (oc-org-tree r))))
+                (dolist (k '("NAME" "PATH" "SHA256" "NAME_FROM"))
+                  (oc-assert (assoc k props) "licence: reference %s lacks %s" r k)))))
+          ;; a correction, proposed then approved, and the tool atom shows the guess beside it
+          (oc-orgfs-ok "stack" "correct" pkg "--says" "Refone" "--by" "Alice" "--why" "because" "--stack" d)
+          (let* ((cf (car (directory-files (expand-file-name (concat "corrections/" pkg) d) t "\\.org\\'")))
+                 (cid (concat pkg "/" (file-name-sans-extension (file-name-nondirectory cf)))))
+            (oc-assert (equal (cdr (assoc "STATE" (oc-first-props (oc-org-tree cf)))) "proposed") "licence: a new correction is not proposed")
+            (let ((r (oc-orgfs "stack" "approve" cid "--by" "alice" "--stack" d)))
+              (oc-assert (not (eq (car r) 0)) "licence: the proposer approved their own correction"))
+            (oc-orgfs-ok "stack" "approve" cid "--by" "Bob" "--stack" d)
+            (let ((props (oc-first-props (oc-org-tree cf))))
+              (oc-assert (equal (cdr (assoc "STATE" props)) "approved") "licence: STATE is not approved")
+              (oc-assert (equal (cdr (assoc "APPROVED_BY" props)) "Bob") "licence: APPROVED_BY is not Bob")))
+          ;; the composed stack, with its licence guess sections, is still only Org syntax
+          (let ((comp (expand-file-name "lic1.org" oc-tmp)))
+            (oc-orgfs-ok "compose" d "--out" comp)
+            (let ((text (oc-read comp)))
+              (oc-check-expanded text d "licence stack" t (append oc-who-allowed '(quote-block horizontal-rule table table-row)))
+              (let ((tree (with-temp-buffer (insert text) (let ((org-inhibit-startup t)) (org-mode)) (org-element-parse-buffer))) (seen 0))
+                (org-element-map tree 'headline
+                  (lambda (hl)
+                    (when (equal (org-element-property :raw-value hl) "licence guess")
+                      (cl-incf seen)
+                      (oc-assert (= 2 (org-element-property :level hl)) "licence: the guess section is not a child of its tool atom"))))
+                (oc-assert (> seen 0) "licence: no licence guess section in the composed stack"))))
+          (oc-say "org_check: ok licence confidence (%d stanza headlines in 2 guesses linked both ways, references hashed, a correction proposed then approved, composed stack still plain Org)" n))))))
+
 (defun oc-main ()
   (oc-assert (not (version< (org-release) "9.3")) "Org %s is older than 9.3: include levels differ; orgfs needs 9.3 or later" (org-release))
   (oc-assert (file-readable-p oc-bin) "no orgfs at %s" oc-bin)
@@ -415,6 +518,7 @@ ALLOWED: the element types the file may hold (default `oc-allowed-elements')."
   (oc-fixture-case)
   (oc-who-case)
   (oc-stack-case)
+  (oc-licence-case)
   (princ (format "org_check: OK (%d assertions; Org %s, Emacs %s)\n" oc-count (org-release) emacs-version)
          #'external-debugging-output)
   (ignore-errors (delete-directory oc-tmp t))
