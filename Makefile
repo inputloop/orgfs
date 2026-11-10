@@ -1,4 +1,4 @@
-# Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors
+# Copyright 2026 Corwin Brust <corwin@bru.st> and Bryant Frankford (INPUTLOOP)
 # SPDX-License-Identifier: GPL-3.0-or-later
 PYTHON ?= python3
 SHELLS ?= dash bash "busybox sh"

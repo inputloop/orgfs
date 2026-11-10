@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors
+# Copyright 2026 Corwin Brust <corwin@bru.st> and Bryant Frankford (INPUTLOOP)
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The stack page as the site's proof of concept: the machine that built the page, read at build time.
 

@@ -4,7 +4,7 @@
 #+LANGUAGE: en
 #+OPTIONS: toc:2 num:nil
 
-Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors.
+Copyright 2026 Corwin Brust <corwin@bru.st> and Bryant Frankford (INPUTLOOP).
 Code: GPL-3.0-or-later (see =COPYING=). Prose, including this file: CC-BY-SA-4.0.
 
 *Status:* orgfs 0.5.0-dev, 2026-11-07, before 1.0. Tested on Linux only; Windows, macOS and the BSDs are not yet tested.

@@ -1,6 +1,6 @@
 ;;; org_check.el --- Emacs and Org as the second reader of orgfs  -*- lexical-binding: t; -*-
 
-;; Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors
+;; Copyright 2026 Corwin Brust <corwin@bru.st> and Bryant Frankford (INPUTLOOP)
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; orgfs says its files are Org: the story is Org text with #+INCLUDE lines, the file that

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors
+# Copyright 2026 Corwin Brust <corwin@bru.st> and Bryant Frankford (INPUTLOOP)
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for atoms and composition: the story and its #+INCLUDE lines, compose (expanded and source
 form), expand, decompose, the round trip, one identity in every form, gap records that name atoms,

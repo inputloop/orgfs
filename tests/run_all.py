@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors
+# Copyright 2026 Corwin Brust <corwin@bru.st> and Bryant Frankford (INPUTLOOP)
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run every test module at once (they are independent) and say what happened.
 

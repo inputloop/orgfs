@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright 2026 Corwin Brust <corwin@bru.st> and Contributors
+# Copyright 2026 Corwin Brust <corwin@bru.st> and Bryant Frankford (INPUTLOOP)
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Run tests/org_check.el (Org itself as the second reader of orgfs files) in Emacs batch.
 #
